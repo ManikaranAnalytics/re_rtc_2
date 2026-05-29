@@ -89,11 +89,17 @@ def get_max_possible_rtc(request: MaxRTCRequest):
             forecast_df=forecast_df,
             roundtrip_loss_pct=request.roundtrip_loss_pct,
             min_compliance_ratio=request.min_compliance_ratio,
+            initial_soc=request.initial_soc_mwh,
+            max_soc=request.max_soc_mwh,
+            min_dispatch_mw=request.min_dispatch_mw,
         )
 
         dispatch_results = optimize_psp_dispatch(
             forecast_df=forecast_df,
             rtc_commitment=max_rtc,
+            initial_soc=request.initial_soc_mwh,
+            max_soc=request.max_soc_mwh,
+            min_dispatch_mw=request.min_dispatch_mw,
             roundtrip_loss_pct=request.roundtrip_loss_pct,
             min_compliance_ratio=request.min_compliance_ratio,
         )
@@ -135,6 +141,7 @@ def get_rtc_range(request: RTCRangeRequest):
             min_compliance_ratio=request.min_compliance_ratio,
             max_soc=request.max_soc_mwh,
             min_dispatch_mw=request.min_dispatch_mw,
+            initial_soc=request.initial_soc_mwh,
         )
         return result
     except Exception as e:

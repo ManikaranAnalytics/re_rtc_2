@@ -94,6 +94,9 @@ class MaxRTCRequest(BaseModel):
     curtailment_end_block: int = Field(64, ge=1, le=96)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day (MWh) — used in dispatch simulation")
+    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0, description="PSP maximum storage capacity in MWh")
+    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0, description="Minimum PSP charge/discharge MW (CERC compliance)")
 
 
 class MaxRTCResponse(BaseModel):
@@ -131,6 +134,7 @@ class RTCRangeRequest(BaseModel):
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
     max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0)
     min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0)
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day (MWh) — used in the Manikaran Suggestion binary search")
     # Optional data overrides
     block_overrides: Optional[List[Dict[str, Any]]] = Field(None)
 

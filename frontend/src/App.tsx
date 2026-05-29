@@ -345,12 +345,44 @@ export default function App() {
   }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
 
   // One-click: carry SoC + charge schedule to next calendar day
-  const handleRollToNextDay = () => {
+  // Also auto-sets the RTC commitment to the optimal (fully-compliant) value for that day.
+  const handleRollToNextDay = async () => {
     if (!scheduleData) return;
     const nextDate = JUNE_DATES[JUNE_DATES.indexOf(selectedDate) + 1];
     if (!nextDate) return;
     const endSoc = scheduleData.summary.end_soc_mwh;
     const todayCharges = scheduleData.carry_forward?.today_charge_schedule ?? null;
+
+    // Fetch the optimal RTC for the next day using the carried-forward SOC
+    // so we can set it atomically along with the date change.
+    try {
+      const rangeRes = await fetch(`${BASE_URL}/api/rtc-range`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: nextDate,
+          wtg_count: wtgCount,
+          solar_ac_mw: solarAc,
+          curtailment_enabled: curtailmentEnabled,
+          curtailment_start_block: curtailmentStart,
+          curtailment_end_block: curtailmentEnd,
+          roundtrip_loss_pct: roundtripLoss,
+          min_compliance_ratio: 0.75,
+          max_soc_mwh: maxSocMwh,
+          min_dispatch_mw: 6,
+          initial_soc_mwh: endSoc,
+        }),
+      });
+      if (rangeRes.ok) {
+        const rangeData: RTCRangeData = await rangeRes.json();
+        setRtcRange(rangeData);
+        // Auto-apply the optimal (fully-compliant) commitment for the new day
+        setRtcCommitment(rangeData.recommended_rtc_mw);
+      }
+    } catch (e) {
+      console.warn('Could not fetch optimal RTC for next day:', e);
+    }
+
     setCarryFromDate(selectedDate);
     setInitialSocMwh(endSoc);
     setPrevDayChargeSchedule(todayCharges);
@@ -383,6 +415,7 @@ export default function App() {
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
             min_dispatch_mw: 6,
+            initial_soc_mwh: initialSocMwh,
             block_overrides: buildOverridesList(),
           })
         });
@@ -398,7 +431,7 @@ export default function App() {
     };
     const handler = setTimeout(fetchRange, 300);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, initialSocMwh, buildOverridesList]);
 
   // Fetch raw forecast (wind_speed, solar_mw_raw etc.) for the Generation Input Table
   useEffect(() => {

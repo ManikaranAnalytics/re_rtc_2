@@ -104,10 +104,11 @@ def optimize_psp_dispatch(
 
             # ── CERC Min-Dispatch Compliance (6 MW rule) ──────────────────
             # PSP dispatch must be either 0 or >= min_dispatch_mw.
-            # If the computed dispatch is below the threshold, zero it out
-            # (we accept the shortfall rather than an illegal micro-dispatch).
+            # If the computed dispatch is below the threshold, bump it up to
+            # min_dispatch_mw (slight overdelivery is acceptable vs. a shortfall).
+            # Re-cap against hardware and SOC limits after the bump.
             if 0 < psp_discharge < min_dispatch_mw:
-                psp_discharge = 0.0
+                psp_discharge = min(min_dispatch_mw, max_discharge, available_discharge_mw)
 
             if psp_discharge > 0:
                 soc_deduction = psp_discharge * 0.25 * discharge_loss_factor
@@ -216,7 +217,8 @@ def find_max_rtc_no_shortfall(
     high: float = 300.0,
     tolerance: float = 0.05,
     min_dispatch_mw: float = 6.0,
-    max_soc: float = 360.0,          # ← was missing; caused Suggestion to ignore capacity changes
+    max_soc: float = 360.0,
+    initial_soc: float = 0.0,
 ) -> float:
     """
     Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
@@ -231,6 +233,7 @@ def find_max_rtc_no_shortfall(
     res_low = optimize_psp_dispatch(
         forecast_df, rtc_commitment=low,
         max_soc=max_soc,
+        initial_soc=initial_soc,
         roundtrip_loss_pct=roundtrip_loss_pct,
         min_compliance_ratio=min_compliance_ratio,
         min_dispatch_mw=min_dispatch_mw,
@@ -244,6 +247,7 @@ def find_max_rtc_no_shortfall(
         res = optimize_psp_dispatch(
             forecast_df, rtc_commitment=mid,
             max_soc=max_soc,
+            initial_soc=initial_soc,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
             min_dispatch_mw=min_dispatch_mw,
@@ -264,6 +268,7 @@ def calculate_rtc_range(
     roundtrip_loss_pct: float = 20.0,
     min_compliance_ratio: float = 0.75,
     min_dispatch_mw: float = 6.0,
+    initial_soc: float = 0.0,
 ) -> dict:
     """
     Calculates the min, recommended (Manikaran's Suggestion), and max committable RTC
@@ -313,14 +318,15 @@ def calculate_rtc_range(
     min_rtc = round(max(0.0, gen_p10 * min_compliance_ratio), 2)
 
     # ── MANIKARAN'S SUGGESTION ────────────────────────────────────────────────
-    # The maximum RTC that results in zero shortfall across all 96 blocks.
-    # This is the safest aggressive commitment — no block will be non-compliant.
+    # The maximum RTC that results in zero shortfall across all 96 blocks,
+    # using the actual initial SOC so the search reflects real dispatch conditions.
     recommended_rtc = find_max_rtc_no_shortfall(
         forecast_df=forecast_df,
         roundtrip_loss_pct=roundtrip_loss_pct,
         min_compliance_ratio=min_compliance_ratio,
         max_soc=max_soc,
         min_dispatch_mw=min_dispatch_mw,
+        initial_soc=initial_soc,
         low=0.0,
         high=gen_p90 + max_psp_per_block,
     )
