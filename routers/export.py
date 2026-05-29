@@ -18,6 +18,8 @@ def export_excel(
     roundtrip_loss_pct: float = Query(20.0, ge=0.0, le=50.0),
     min_compliance_ratio: float = Query(0.75, ge=0.5, le=1.0),
     initial_soc_mwh: float = Query(0.0, ge=0.0, le=360.0),
+    max_soc_mwh: float = Query(360.0, ge=10.0, le=360.0),
+    min_dispatch_mw: float = Query(6.0, ge=0.0, le=60.0),
 ):
     """
     Generates and returns a downloadable Excel workbook (.xlsx) containing:
@@ -40,14 +42,19 @@ def export_excel(
             forecast_df=forecast_df,
             rtc_commitment=rtc_commitment_mw,
             initial_soc=initial_soc_mwh,
+            max_soc=max_soc_mwh,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
+            min_dispatch_mw=min_dispatch_mw,
         )
 
         rtc_range = calculate_rtc_range(
             forecast_df=forecast_df,
+            max_soc=max_soc_mwh,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
+            min_dispatch_mw=min_dispatch_mw,
+            initial_soc=initial_soc_mwh,
         )
 
         excel_bytes = build_excel(

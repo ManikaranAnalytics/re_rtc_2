@@ -273,6 +273,7 @@ export default function App() {
         min_compliance_ratio: '0.75',
         max_soc_mwh: String(maxSocMwh),
         min_dispatch_mw: '6',
+        initial_soc_mwh: String(initialSocMwh),
       });
       const response = await fetch(`${BASE_URL}/api/export/excel?${params.toString()}`);
       if (!response.ok) throw new Error('Export failed');
