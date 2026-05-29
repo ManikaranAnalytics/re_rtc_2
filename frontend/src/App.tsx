@@ -158,8 +158,11 @@ interface RTCRangeData {
   };
 }
 
-// Dynamically resolve API host — works on localhost AND across local network
-const BASE_URL = `http://${window.location.hostname}:8000`;
+// API base URL:
+//   - In dev (npm run dev): Vite proxies /api → http://localhost:8000, so use relative ""
+//   - In production: FastAPI serves the built frontend at the same origin, so use relative ""
+//   - Override via VITE_API_URL env var for custom deployments (e.g. separate backend host)
+const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
 // Generate date options for June 2026
 const JUNE_DATES = Array.from({ length: 30 }, (_, i) => {

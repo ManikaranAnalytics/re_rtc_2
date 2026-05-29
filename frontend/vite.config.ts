@@ -7,5 +7,12 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',  // Expose on all network interfaces (LAN accessible)
     port: 5173,
-  }
+    proxy: {
+      // Forward all /api requests to FastAPI backend during dev
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
+    },
+  },
 })
