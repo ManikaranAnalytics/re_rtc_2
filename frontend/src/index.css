@@ -211,10 +211,11 @@ body {
 /* Two-column layout: Controls + Visuals */
 .main-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 24px;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 20px;
   flex: 1;
-  padding: 0 24px 24px 24px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* Configuration Sliders */
@@ -310,9 +311,11 @@ body {
 /* Visualization grid: Chart + Tank */
 .visuals-container {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: minmax(0, 1fr) 220px;
   gap: 24px;
   margin-bottom: 24px;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 @media (max-width: 1200px) {
@@ -323,8 +326,10 @@ body {
 
 .chart-panel {
   min-height: 400px;
+  min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .chart-header {
@@ -637,4 +642,577 @@ table.schedule-table {
 /* Modified row left accent */
 .schedule-table tr.gen-modified-row td:first-child {
   border-left: 3px solid rgba(245, 158, 11, 0.7);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NAVIGATION BAR
+   ═══════════════════════════════════════════════════════════════ */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.page-content {
+  flex: 1;
+  max-width: 1440px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 20px 24px 24px;
+  overflow-x: hidden;
+}
+
+.top-nav {
+  background: rgba(13, 20, 38, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.top-nav-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 60px;
+  gap: 24px;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.nav-logo {
+  height: 36px;
+  width: auto;
+  object-fit: contain;
+}
+
+.nav-brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, #ffffff 0%, #a5b4fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.nav-tab:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-tab-active {
+  color: #e2e8f0 !important;
+  background: rgba(99, 102, 241, 0.12) !important;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  font-weight: 600;
+}
+
+/* Config button — distinct from regular tabs */
+.nav-config-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  margin-left: 8px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.nav-config-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.nav-config-btn-active {
+  color: #fbbf24 !important;
+  background: rgba(251, 191, 36, 0.1) !important;
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+.nav-right {
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PAGE HEADERS
+   ═══════════════════════════════════════════════════════════════ */
+
+.page-header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.page-heading {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.status-error {
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.status-ok {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  box-shadow: var(--glow-green);
+}
+
+.status-warn {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: var(--glow-red);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SIDEBAR + RESPONSIVE DRAWER
+   ═══════════════════════════════════════════════════════════════ */
+
+.sidebar-toggle {
+  display: none; /* Hidden on desktop */
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #94a3b8;
+  width: 36px;
+  height: 36px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+/* View toggle pill group */
+.view-toggles {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.view-toggle-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.view-toggle-pill:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+}
+
+.view-toggle-pill.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+}
+
+.sidebar-overlay {
+  display: none;
+}
+
+.sidebar-wrapper {
+  min-width: 0;
+  max-width: 320px;
+}
+
+/* When sidebar is collapsed, chart takes full width */
+.main-layout.sidebar-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* When tank gauge is hidden, chart takes full width of visuals row */
+.visuals-container.tank-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.content-column {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0; /* prevent overflow */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PRIMARY BUTTON
+   ═══════════════════════════════════════════════════════════════ */
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border: none;
+  border-radius: 10px;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 10px 24px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  letter-spacing: 0.3px;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #818cf8, #6366f1);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45);
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MULTI-DAY ANALYSIS PAGE
+   ═══════════════════════════════════════════════════════════════ */
+
+.multiday-page,
+.multiday-page-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.multiday-config-bar {
+  padding: 20px 24px;
+}
+
+.multiday-config-grid {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr auto;
+  gap: 20px;
+  align-items: end;
+}
+
+.multiday-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.multiday-kpi-card {
+  padding: 16px;
+}
+
+/* Chart view tabs */
+.chart-view-tabs {
+  display: flex;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.chart-view-tab {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition: all 0.2s ease;
+}
+
+.chart-view-tab:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chart-view-tab-active {
+  background: rgba(99, 102, 241, 0.12) !important;
+  color: #e2e8f0 !important;
+  font-weight: 600;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+/* Generation page */
+.generation-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Config page */
+.config-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.config-page-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .config-page-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Single day page */
+.single-day-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE: TABLET (≤1024px)
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 1024px) {
+  .top-nav-inner {
+    height: 56px;
+    padding: 0 16px;
+    gap: 12px;
+  }
+
+  .nav-brand-text {
+    display: none;
+  }
+
+  .nav-tab span {
+    display: none;
+  }
+
+  .nav-config-btn span {
+    display: none;
+  }
+
+  .nav-tab {
+    padding: 8px 12px;
+  }
+
+  .page-content {
+    padding: 16px;
+  }
+
+  .main-layout {
+    grid-template-columns: 1fr;
+    padding: 0;
+  }
+
+  /* Sidebar becomes a slide-out drawer */
+  .sidebar-toggle {
+    display: flex;
+  }
+
+  /* Hide desktop collapse — use drawer toggle instead */
+  .sidebar-collapse-btn {
+    display: none;
+  }
+
+  /* View toggle pills stay visible but compact on tablet */
+  .view-toggles {
+    order: 1;
+  }
+
+  .sidebar-wrapper {
+    position: fixed;
+    top: 56px;
+    left: 0;
+    bottom: 0;
+    width: 340px;
+    max-width: 85vw;
+    z-index: 200;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    background: rgba(7, 10, 19, 0.97);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 16px;
+  }
+
+  .sidebar-wrapper.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    top: 56px;
+    z-index: 199;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+  }
+
+  .visuals-container {
+    grid-template-columns: 1fr;
+  }
+
+  .multiday-config-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .page-heading {
+    font-size: 18px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE: MOBILE (≤640px)
+   ═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 640px) {
+  .top-nav-inner {
+    height: 50px;
+    padding: 0 12px;
+  }
+
+  .nav-logo {
+    height: 28px;
+  }
+
+  .nav-tab {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .page-content {
+    padding: 12px;
+  }
+
+  .glass-panel {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .kpi-value {
+    font-size: 20px;
+  }
+
+  .multiday-config-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .multiday-kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .multiday-kpi-card {
+    padding: 12px;
+  }
+
+  .chart-view-tabs {
+    flex-direction: column;
+  }
+
+  .page-header-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .page-heading {
+    font-size: 16px;
+  }
+
+  .table-header-wrapper {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANIMATIONS
+   ═══════════════════════════════════════════════════════════════ */
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
