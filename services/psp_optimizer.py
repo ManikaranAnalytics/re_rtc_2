@@ -261,6 +261,68 @@ def find_max_rtc_no_shortfall(
     return round(best_rtc, 2)
 
 
+def find_max_rtc_multiday(
+    forecast_dfs: list,
+    roundtrip_loss_pct: float = 20.0,
+    min_compliance_ratio: float = 0.75,
+    min_dispatch_mw: float = 6.0,
+    max_soc: float = 360.0,
+    initial_soc: float = 0.0,
+    low: float = 0.0,
+    high: float = 300.0,
+    tolerance: float = 0.05,
+) -> float:
+    """
+    Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
+    across ALL provided days are compliant, with SOC correctly chained between days.
+
+    This is a true multi-day optimization — independent of whatever RTC the user
+    currently has selected. It starts from initial_soc (default 0) and lets the
+    SOC evolve naturally day-over-day for each candidate RTC.
+
+    Parameters:
+      - forecast_dfs    : List of per-day DataFrames (one per date, in order)
+      - roundtrip_loss_pct, min_compliance_ratio, min_dispatch_mw, max_soc: PSP config
+      - initial_soc     : Starting SoC for day 1 (default 0 = clean slate)
+      - low / high      : Binary search bounds in MW
+      - tolerance       : Convergence threshold in MW
+
+    Returns:
+      Highest RTC (MW, rounded to 2dp) where every block on every day is compliant.
+    """
+    def all_days_compliant(rtc: float) -> bool:
+        soc = initial_soc
+        for df in forecast_dfs:
+            result = optimize_psp_dispatch(
+                df,
+                rtc_commitment=rtc,
+                initial_soc=soc,
+                max_soc=max_soc,
+                roundtrip_loss_pct=roundtrip_loss_pct,
+                min_compliance_ratio=min_compliance_ratio,
+                min_dispatch_mw=min_dispatch_mw,
+            )
+            if not result['summary']['fully_compliant']:
+                return False
+            soc = result['summary']['end_soc_mwh']
+        return True
+
+    # Sanity check: if even low is not achievable, return 0
+    if not all_days_compliant(low):
+        return 0.0
+
+    best_rtc = low
+    while (high - low) > tolerance:
+        mid = (low + high) / 2.0
+        if all_days_compliant(mid):
+            best_rtc = mid
+            low = mid
+        else:
+            high = mid
+
+    return round(best_rtc, 2)
+
+
 def calculate_rtc_range(
     forecast_df: pd.DataFrame,
     max_soc: float = 360.0,

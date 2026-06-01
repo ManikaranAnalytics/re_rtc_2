@@ -149,3 +149,27 @@ class RTCRangeResponse(BaseModel):
     max_rtc_mw: float
     recommended_rtc_mw: float
     interpretation: RTCRangeInterpretation
+
+
+# ── Multi-Day Max RTC (cross-day binary search) ───────────────────────────────
+
+class MultiDayMaxRTCRequest(BaseModel):
+    dates: List[str] = Field(..., description="Ordered list of dates in YYYY-MM-DD format")
+    wtg_count: int = Field(10, ge=1, le=59)
+    solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0)
+    curtailment_enabled: bool = Field(True)
+    curtailment_start_block: int = Field(37, ge=1, le=96)
+    curtailment_end_block: int = Field(64, ge=1, le=96)
+    roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
+    min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
+    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0)
+    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0)
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day 1 (default 0 = clean slate)")
+
+
+class MultiDayMaxRTCResponse(BaseModel):
+    optimal_rtc_mw: float = Field(..., description="Max RTC (MW) where every block on every day is 100% compliant")
+    days_analyzed: int
+    period_start: str
+    period_end: str
+

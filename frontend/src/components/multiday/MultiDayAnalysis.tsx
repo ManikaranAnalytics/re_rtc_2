@@ -31,6 +31,12 @@ export default function MultiDayAnalysis() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
 
+  // True backend-computed multi-day optimal RTC
+  const [optimalRtcMw, setOptimalRtcMw] = useState<number | null>(null);
+  const [isSearchingOptimal, setIsSearchingOptimal] = useState(false);
+  const [optimalSearchError, setOptimalSearchError] = useState('');
+
+
   // Chart view toggle
   const [chartView, setChartView] = useState<'soc' | 'dispatch' | 'compliance'>('soc');
 
@@ -42,16 +48,20 @@ export default function MultiDayAnalysis() {
     setProgress(0);
     setError('');
     setResults([]);
+    setOptimalRtcMw(null);
+    setOptimalSearchError('');
 
     const dayResults: DayResult[] = [];
     let currentSocMwh = 0;
     let prevChargeSchedule: number[] | null = null;
+    const datesRun: string[] = [];
 
     try {
       for (let i = 0; i < numDays; i++) {
         const dateIndex = JUNE_DATES.indexOf(startDate) + i;
         if (dateIndex >= JUNE_DATES.length) break;
         const date = JUNE_DATES[dateIndex];
+        datesRun.push(date);
 
         const response = await fetch(`${BASE_URL}/api/schedule`, {
           method: 'POST',
@@ -83,6 +93,43 @@ export default function MultiDayAnalysis() {
 
         setProgress(((i + 1) / numDays) * 100);
         setResults([...dayResults]); // progressive render
+      }
+
+      // ── Auto-trigger true multi-day optimal RTC search ────────────────────
+      if (datesRun.length > 0) {
+        setIsSearchingOptimal(true);
+        try {
+          const optRes = await fetch(`${BASE_URL}/api/multi-day-max-rtc`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dates: datesRun,
+              wtg_count: wtgCount,
+              solar_ac_mw: solarAc,
+              curtailment_enabled: curtailmentEnabled,
+              curtailment_start_block: curtailmentStart,
+              curtailment_end_block: curtailmentEnd,
+              roundtrip_loss_pct: roundtripLoss,
+              min_compliance_ratio: 0.75,
+              max_soc_mwh: maxSocMwh,
+              min_dispatch_mw: 6,
+              initial_soc_mwh: 0,
+            })
+          });
+          if (optRes.ok) {
+            const optData = await optRes.json();
+            setOptimalRtcMw(optData.optimal_rtc_mw);
+          } else {
+            const errText = await optRes.text();
+            console.error('[multi-day-max-rtc] HTTP', optRes.status, errText);
+            setOptimalSearchError(`Server error ${optRes.status}: ${errText.slice(0, 120)}`);
+          }
+        } catch (searchErr: any) {
+          console.error('[multi-day-max-rtc] fetch failed:', searchErr);
+          setOptimalSearchError(searchErr.message || 'Optimal RTC search failed');
+        } finally {
+          setIsSearchingOptimal(false);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Multi-day analysis failed');
@@ -125,13 +172,14 @@ export default function MultiDayAnalysis() {
   }));
 
   // ── RTC Suggestion ──
-  // Max safe RTC = worst day's min net_schedule ÷ 0.75 (compliance floor rule)
-  const worstDay = perDayMinNet.reduce((w, d) => d.min < w.min ? d : w, perDayMinNet[0] ?? { date: '', min: 0, avg: 0, compliant: false });
-  const maxSafeRtc = results.length > 0 ? Math.max(0, worstDay.min / 0.75) : 0;
-  // Conservative = P10 net schedule ÷ 0.75
-  const conservativeRtc = results.length > 0 ? Math.max(0, genP10 / 0.75) : 0;
-  // Optimal = max RTC that keeps every block above 75% → the global min net_schedule / 0.75
-  const optimalRtc = results.length > 0 ? Math.max(0, genMin / 0.75) : 0;
+  // Conservative = P10 net schedule (informational, from current simulation)
+  const conservativeRtc = results.length > 0 ? Math.max(0, genP10) : 0;
+  // optimalRtc comes from backend binary search (set after analysis completes)
+
+  // Worst day across the period (used in stats strip)
+  const worstDay = perDayMinNet.length > 0
+    ? perDayMinNet.reduce((w, d) => d.min < w.min ? d : w)
+    : null;
 
   const dateLabel = (d: string) => d.replace('2026-06-', 'Jun ');
   const periodLabel = results.length > 0
@@ -147,11 +195,6 @@ export default function MultiDayAnalysis() {
   });
 
   // ── Chart: SoC Timeline ──
-  const socLabels = allBlocks.filter((_, i) => i % 4 === 0).map(ab => {
-    const dayLabel = ab.date.replace('2026-06-', 'Jun ');
-    return ab.block.time.substring(0, 5) === '00:00' ? dayLabel : ab.block.time.substring(0, 5);
-  });
-
   const socChartData = {
     labels: allBlocks.map((ab, i) => {
       if (i % 4 !== 0) return '';
@@ -470,46 +513,69 @@ export default function MultiDayAnalysis() {
                   RTC Optimal Suggestion
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
-                  Based on {results.length}-day analysis ({periodLabel}) with current plant config
+                  Independent backend optimization across {results.length} days ({periodLabel}) — not derived from your current RTC setting
                 </p>
               </div>
             </div>
 
             {/* Suggestion cards */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '16px' }}>
-              {/* Max Safe */}
+              {/* Max Safe — from backend binary search */}
               <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '10px', padding: '14px', position: 'relative' }}>
                 <div style={{ position: 'absolute', top: '-7px', right: '10px', background: 'linear-gradient(90deg,#10b981,#059669)', borderRadius: '4px', fontSize: '9px', padding: '2px 6px', color: '#fff', fontWeight: '700', letterSpacing: '0.5px' }}>RECOMMENDED</div>
-                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Max Safe RTC (100% Compliance)</div>
-                <div style={{ fontSize: '28px', fontWeight: '800', color: '#34d399', fontFamily: 'JetBrains Mono, monospace' }}>
-                  {optimalRtc.toFixed(1)} <span style={{ fontSize: '14px', fontWeight: '400' }}>MW</span>
-                </div>
-                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                  Guarantees 0 shortfall blocks across all {results.length} days
-                </div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Max Safe RTC — 100% Compliance All Days</div>
+                {isSearchingOptimal ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0' }}>
+                    <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid rgba(52,211,153,0.2)', borderTopColor: '#34d399', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+                    <span style={{ fontSize: '13px', color: '#64748b' }}>Running cross-day binary search…</span>
+                  </div>
+                ) : optimalRtcMw !== null ? (
+                  <>
+                    <div style={{ fontSize: '28px', fontWeight: '800', color: '#34d399', fontFamily: 'JetBrains Mono, monospace' }}>
+                      {optimalRtcMw.toFixed(1)} <span style={{ fontSize: '14px', fontWeight: '400' }}>MW</span>
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
+                      Guarantees 0 shortfall blocks across all {results.length} days (SOC carry-forward modelled)
+                    </div>
+                  </>
+                ) : optimalSearchError ? (
+                  <div style={{ fontSize: '11px', color: '#f87171', padding: '8px 0', lineHeight: '1.5' }}>
+                    ⚠ {optimalSearchError}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '13px', color: '#475569', padding: '8px 0' }}>–</div>
+                )}
               </div>
 
-              {/* Conservative */}
+              {/* Conservative — P10 net delivery from simulation */}
               <div style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '10px', padding: '14px' }}>
-                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Conservative (P10 Based)</div>
+                <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>P10 Net Delivery (Conservative Floor)</div>
                 <div style={{ fontSize: '28px', fontWeight: '800', color: '#fbbf24', fontFamily: 'JetBrains Mono, monospace' }}>
                   {conservativeRtc.toFixed(1)} <span style={{ fontSize: '14px', fontWeight: '400' }}>MW</span>
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                  Based on P10 net delivery across all blocks
+                  10th percentile of actual net schedule across all {results.length} days
                 </div>
               </div>
 
               {/* Currently Used */}
               <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.18)', borderRadius: '10px', padding: '14px' }}>
                 <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Current Config RTC</div>
-                <div style={{ fontSize: '28px', fontWeight: '800', color: rtcCommitment <= optimalRtc ? '#34d399' : '#f87171', fontFamily: 'JetBrains Mono, monospace' }}>
+                <div style={{
+                  fontSize: '28px', fontWeight: '800',
+                  color: optimalRtcMw !== null
+                    ? (rtcCommitment <= optimalRtcMw ? '#34d399' : '#f87171')
+                    : '#cbd5e1',
+                  fontFamily: 'JetBrains Mono, monospace'
+                }}>
                   {rtcCommitment.toFixed(1)} <span style={{ fontSize: '14px', fontWeight: '400' }}>MW</span>
                 </div>
                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>
-                  {rtcCommitment <= optimalRtc
-                    ? `✓ Within safe range (headroom: ${(optimalRtc - rtcCommitment).toFixed(1)} MW)`
-                    : `⚠ Above safe limit by ${(rtcCommitment - optimalRtc).toFixed(1)} MW`
+                  {optimalRtcMw !== null
+                    ? rtcCommitment <= optimalRtcMw
+                      ? `✓ Within safe range (headroom: ${(optimalRtcMw - rtcCommitment).toFixed(1)} MW)`
+                      : `⚠ Above safe limit by ${(rtcCommitment - optimalRtcMw).toFixed(1)} MW`
+                    : isSearchingOptimal ? 'Computing optimal…' : 'Run analysis to compare'
                   }
                 </div>
               </div>
@@ -521,8 +587,8 @@ export default function MultiDayAnalysis() {
               <div style={{ color: '#64748b' }}>Net Schedule P10: <strong style={{ color: '#cbd5e1' }}>{genP10.toFixed(1)} MW</strong></div>
               <div style={{ color: '#64748b' }}>Net Schedule P50: <strong style={{ color: '#cbd5e1' }}>{genP50.toFixed(1)} MW</strong></div>
               <div style={{ color: '#64748b' }}>Net Schedule P90: <strong style={{ color: '#cbd5e1' }}>{genP90.toFixed(1)} MW</strong></div>
-              <div style={{ color: '#64748b' }}>Worst Day: <strong style={{ color: '#f87171' }}>{worstDay.date ? dateLabel(worstDay.date) : '–'}</strong></div>
-              <div style={{ color: '#64748b' }}>Worst Block Floor: <strong style={{ color: '#f87171' }}>{worstDay.min.toFixed(1)} MW</strong></div>
+              <div style={{ color: '#64748b' }}>Worst Day: <strong style={{ color: '#f87171' }}>{worstDay ? dateLabel(worstDay.date) : '–'}</strong></div>
+              <div style={{ color: '#64748b' }}>Worst Block Floor: <strong style={{ color: '#f87171' }}>{worstDay ? worstDay.min.toFixed(1) : '–'} MW</strong></div>
             </div>
           </div>
 
