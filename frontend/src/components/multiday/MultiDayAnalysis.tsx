@@ -2,52 +2,49 @@ import React, { useState, useCallback } from 'react';
 import { Chart } from 'react-chartjs-2';
 import '../../utils/chartSetup';
 import { useOptimizer } from '../../context/OptimizerContext';
+import { useMultiDay } from '../../context/MultiDayContext';
 import { BASE_URL, JUNE_DATES } from '../../utils/constants';
 import type { ScheduleResponse, BlockData } from '../../types';
-
-/* ───────── Types ───────── */
-
-interface DayResult {
-  date: string;
-  schedule: ScheduleResponse;
-}
 
 /* ───────── Component ───────── */
 
 export default function MultiDayAnalysis() {
   const {
-    wtgCount, solarAc, rtcCommitment, maxSocMwh,
+    wtgCount: ctxWtg, solarAc: ctxSolar, rtcCommitment: ctxRtc, maxSocMwh,
     curtailmentEnabled, curtailmentStart, curtailmentEnd,
     roundtripLoss,
   } = useOptimizer();
 
-  // Multi-day config
-  const [startDate, setStartDate] = useState('2026-06-01');
-  const [numDays, setNumDays] = useState(7);
+  const {
+    startDate, setStartDate,
+    numDays, setNumDays,
+    results, setResults,
+    optimalRtcMw, setOptimalRtcMw,
+    optimalSearchError, setOptimalSearchError,
+    chartView, setChartView,
+  } = useMultiDay();
 
-  // Results
-  const [results, setResults] = useState<DayResult[]>([]);
+  // Local config — initialized from global context, independently adjustable here
+  const [wtgCount, setWtgCount] = useState(ctxWtg);
+  const [solarAc, setSolarAc] = useState(ctxSolar);
+  const [rtcCommitment, setRtcCommitment] = useState(ctxRtc);
+  const [isStale, setIsStale] = useState(false);
+
+  const markStale = () => setIsStale(true);
+
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
-
-  // True backend-computed multi-day optimal RTC
-  const [optimalRtcMw, setOptimalRtcMw] = useState<number | null>(null);
   const [isSearchingOptimal, setIsSearchingOptimal] = useState(false);
-  const [optimalSearchError, setOptimalSearchError] = useState('');
-
-
-  // Chart view toggle
-  const [chartView, setChartView] = useState<'soc' | 'dispatch' | 'compliance'>('soc');
 
   // Max selectable days from startDate
   const maxDays = Math.min(30, JUNE_DATES.length - JUNE_DATES.indexOf(startDate));
 
   const runAnalysis = useCallback(async () => {
+    setIsStale(false);
     setIsRunning(true);
     setProgress(0);
     setError('');
-    setResults([]);
     setOptimalRtcMw(null);
     setOptimalSearchError('');
 
@@ -136,6 +133,7 @@ export default function MultiDayAnalysis() {
     } finally {
       setIsRunning(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, numDays, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh]);
 
   // ── Aggregated Metrics ──
@@ -391,54 +389,91 @@ export default function MultiDayAnalysis() {
 
       {/* ─── Config Bar ─── */}
       <div className="multiday-config-bar glass-panel">
-        <div className="multiday-config-grid">
-          <div className="config-group" style={{ gap: '6px' }}>
-            <span className="config-label">Start Date</span>
-            <select className="date-select" value={startDate} onChange={e => setStartDate(e.target.value)}>
+        {/* Single-row flex bar — all controls vertically centred */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0',
+          flexWrap: 'nowrap',
+          width: '100%',
+        }}>
+
+          {/* ── Start Date ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingRight: '16px', borderRight: '1px solid rgba(255,255,255,0.07)', minWidth: '110px' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>Start Date</span>
+            <select className="date-select" value={startDate} onChange={e => { setStartDate(e.target.value); markStale(); }}>
               {JUNE_DATES.map(d => (
                 <option key={d} value={d}>{new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</option>
               ))}
             </select>
           </div>
 
-          <div className="config-group" style={{ gap: '6px' }}>
-            <span className="config-label">Duration (days)</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <input
-                type="range" min="2" max={maxDays} step="1"
-                className="range-slider"
-                value={numDays}
-                onChange={e => setNumDays(parseInt(e.target.value))}
-                style={{ '--color-wind': '#818cf8', flex: 1 } as React.CSSProperties}
-              />
-              <span style={{ color: '#818cf8', fontWeight: '700', fontSize: '18px', fontFamily: 'monospace', minWidth: '32px' }}>{numDays}</span>
+          {/* ── Duration ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingLeft: '16px', paddingRight: '16px', borderRight: '1px solid rgba(255,255,255,0.07)', flex: '1', minWidth: '130px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</span>
+              <span style={{ color: '#818cf8', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace' }}>{numDays} days</span>
             </div>
+            <input type="range" min="2" max={maxDays} step="1" className="range-slider" value={numDays}
+              onChange={e => { setNumDays(parseInt(e.target.value)); markStale(); }}
+              style={{ '--color-wind': '#818cf8', width: '100%' } as React.CSSProperties} />
           </div>
 
-          <div className="config-group" style={{ gap: '6px' }}>
-            <span className="config-label">Using Config</span>
-            <div style={{ fontSize: '12px', color: '#94a3b8', lineHeight: '1.6' }}>
-              WTG: <strong style={{ color: '#00d2ff' }}>{wtgCount}</strong> · Solar: <strong style={{ color: '#f59e0b' }}>{solarAc} MW</strong> · RTC: <strong style={{ color: '#ef4444' }}>{rtcCommitment.toFixed(1)} MW</strong>
+          {/* ── Wind Turbines ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingLeft: '16px', paddingRight: '16px', borderRight: '1px solid rgba(255,255,255,0.07)', flex: '1', minWidth: '140px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>Wind Turbines</span>
+              <span style={{ color: '#00d2ff', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace', marginLeft: '8px' }}>{wtgCount} WTGs</span>
             </div>
+            <input type="range" min="1" max="59" step="1" className="range-slider" value={wtgCount}
+              onChange={e => { setWtgCount(parseInt(e.target.value)); markStale(); }}
+              style={{ '--color-wind': '#00d2ff', width: '100%' } as React.CSSProperties} />
+            <span style={{ fontSize: '10px', color: '#475569' }}>Cap: {(wtgCount * 3.15).toFixed(1)} MW</span>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+          {/* ── Solar Net Capacity ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingLeft: '16px', paddingRight: '16px', borderRight: '1px solid rgba(255,255,255,0.07)', flex: '1', minWidth: '140px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>Solar Net Cap.</span>
+              <span style={{ color: '#f59e0b', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace', marginLeft: '8px' }}>{solarAc} MW</span>
+            </div>
+            <input type="range" min="5" max="175" step="1" className="range-slider" value={solarAc}
+              onChange={e => { setSolarAc(parseInt(e.target.value)); markStale(); }}
+              style={{ '--color-wind': '#f59e0b', width: '100%' } as React.CSSProperties} />
+            <span style={{ fontSize: '10px', color: '#475569' }}>Max: 175 MW AC</span>
+          </div>
+
+          {/* ── RTC Commitment ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', paddingLeft: '16px', paddingRight: '16px', borderRight: '1px solid rgba(255,255,255,0.07)', flex: '1', minWidth: '150px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>RTC Commitment</span>
+              <span style={{ color: '#ef4444', fontWeight: '700', fontSize: '13px', fontFamily: 'monospace', marginLeft: '8px' }}>{rtcCommitment.toFixed(1)} MW</span>
+            </div>
+            <input type="range" min="1.0" max="100.0" step="0.5" className="range-slider" value={rtcCommitment}
+              onChange={e => { setRtcCommitment(parseFloat(e.target.value)); markStale(); }}
+              style={{ '--color-wind': '#ef4444', width: '100%' } as React.CSSProperties} />
+            <span style={{ fontSize: '10px', color: '#475569' }}>Max PPA: 100.0 MW</span>
+          </div>
+
+          {/* ── Run Button ── */}
+          <div style={{ paddingLeft: '16px', flexShrink: 0 }}>
             <button
               onClick={runAnalysis}
               disabled={isRunning}
               className="btn-primary"
-              style={{ width: '100%', padding: '10px 20px', fontSize: '14px' }}
+              style={{ padding: '10px 22px', fontSize: '14px', whiteSpace: 'nowrap' }}
             >
               {isRunning ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', animation: 'spin 1s linear infinite' }} />
-                  Optimizing Day {Math.ceil(progress / (100 / numDays))} / {numDays}...
+                  Day {Math.ceil(progress / (100 / numDays))} / {numDays}…
                 </span>
               ) : (
                 `▶ Run ${numDays}-Day Analysis`
               )}
             </button>
           </div>
+
         </div>
 
         {/* Progress bar */}
@@ -451,6 +486,19 @@ export default function MultiDayAnalysis() {
         {error && (
           <div style={{ marginTop: '10px', padding: '8px 12px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', color: '#f87171', fontSize: '13px' }}>
             {error}
+          </div>
+        )}
+
+        {/* Stale results warning */}
+        {isStale && results.length > 0 && !isRunning && (
+          <div style={{
+            marginTop: '10px', padding: '10px 14px',
+            background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.30)',
+            borderRadius: '8px', color: '#fbbf24', fontSize: '13px',
+            display: 'flex', alignItems: 'center', gap: '10px',
+          }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', flexShrink: 0, animation: 'pulse 1.5s ease-in-out infinite' }} />
+            <span>Config changed — results &amp; optimal commitment are outdated. Click <strong>Run Analysis</strong> to update.</span>
           </div>
         )}
       </div>

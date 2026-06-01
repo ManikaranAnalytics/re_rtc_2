@@ -1,6 +1,7 @@
 import './utils/chartSetup';
 import { Routes, Route } from 'react-router-dom';
 import { OptimizerProvider } from './context/OptimizerContext';
+import { MultiDayProvider } from './context/MultiDayContext';
 
 // Layout
 import AppLayout from './components/layout/AppLayout';
@@ -14,6 +15,7 @@ import ConfigPage from './pages/ConfigPage';
 export default function App() {
   return (
     <OptimizerProvider>
+      <MultiDayProvider>
       <Routes>
         <Route element={<AppLayout />}>
           <Route index element={<SingleDayPage />} />
@@ -22,6 +24,7 @@ export default function App() {
           <Route path="config" element={<ConfigPage />} />
         </Route>
       </Routes>
+      </MultiDayProvider>
     </OptimizerProvider>
   );
 }
