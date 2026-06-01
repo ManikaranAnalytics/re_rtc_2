@@ -1,5 +1,6 @@
-// Dynamically resolve API host — works on localhost AND across local network
-export const BASE_URL = `http://${window.location.hostname}:8000`;
+// In production the frontend is served by FastAPI on the same origin → use relative URLs.
+// In Vite dev mode (port 5173) Vite proxies /api to port 8000, so empty string still works.
+export const BASE_URL = '';
 
 // Generate date options for June 2026
 export const JUNE_DATES = Array.from({ length: 30 }, (_, i) => {

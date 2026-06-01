@@ -12,10 +12,11 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS — allow all in dev; in production the frontend is served from the same origin
+# CORS — dev: allow all; production: same-origin (frontend served by FastAPI itself)
+_ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -33,30 +34,24 @@ app.include_router(export.router, prefix="/api", tags=["Export"])
 FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend", "dist")
 
 if os.path.isdir(FRONTEND_DIST):
-    # Serve static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=os.path.join(FRONTEND_DIST, "assets")), name="assets")
-
-    # Serve any static file that exists in dist (favicons, logo.png, etc.)
-    @app.get("/logo.png")
-    @app.get("/favicon.svg")
-    @app.get("/icons.svg")
-    def serve_public_file(file: str = ""):
-        # handled by catch-all below
-        pass
-
-    # Catch-all: return index.html for all non-API routes (SPA client-side routing)
-    @app.get("/{full_path:path}")
-    def serve_spa(full_path: str):
-        index = os.path.join(FRONTEND_DIST, "index.html")
-        return FileResponse(index)
+    # Mount the entire dist directory — StaticFiles with html=True serves
+    # index.html as fallback for any path not matched by an API route,
+    # which is exactly what a SPA (React Router) needs.
+    app.mount(
+        "/",
+        StaticFiles(directory=FRONTEND_DIST, html=True),
+        name="frontend",
+    )
 else:
     @app.get("/")
     def read_root():
         return {
-            "message": "Welcome to the RE-RTC Dispatch Optimizer API",
+            "message": "RE-RTC Dispatch Optimizer API is running.",
             "docs": "/docs",
-            "status": "Healthy — frontend not built yet, run: cd frontend && npm install && npm run build",
+            "status": "Frontend not built. Run: cd frontend && npm install && npm run build",
         }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    port = int(os.getenv("PORT", 8000))
+    workers = int(os.getenv("WEB_CONCURRENCY", 2))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, workers=workers, reload=False)

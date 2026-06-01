@@ -12,6 +12,12 @@ from services.psp_optimizer import optimize_psp_dispatch, find_max_rtc_no_shortf
 router = APIRouter()
 
 
+@router.get("/health", tags=["Health"])
+def health_check():
+    """Lightweight liveness probe for Docker / load-balancer health checks."""
+    return {"status": "ok"}
+
+
 def _apply_overrides(forecast_df: pd.DataFrame, overrides) -> pd.DataFrame:
     """Apply per-block wind/solar overrides from the editable data tab."""
     if not overrides:

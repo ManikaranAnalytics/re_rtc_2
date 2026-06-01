@@ -169,6 +169,14 @@ export default function MultiDayAnalysis() {
     compliant: r.schedule.summary.fully_compliant,
   }));
 
+  // ── 50% block-count threshold ──
+  // A day passes if at least 50% of its blocks (>= 48/96) are compliant at the 75% RTC floor.
+  // This is a looser DAY-PASS condition than "fully compliant" (which requires 96/96 blocks).
+  // It answers: "on how many days did we at least deliver half the day correctly?"
+  const compliantDays50Pct = results.filter(r =>
+    r.schedule.summary.compliant_blocks >= Math.ceil(r.schedule.summary.total_blocks * 0.50)
+  ).length;
+
   // ── RTC Suggestion ──
   // Conservative = P10 net schedule (informational, from current simulation)
   const conservativeRtc = results.length > 0 ? Math.max(0, genP10) : 0;
@@ -509,16 +517,18 @@ export default function MultiDayAnalysis() {
           {/* Aggregated KPIs — Totals Row */}
           <div className="multiday-kpi-grid">
             {[
-              { label: 'Period', value: periodLabel, unit: '', color: '#818cf8', mono: false },
-              { label: 'Overall Compliance', value: ((compliantBlocks / totalBlocks) * 100).toFixed(1), unit: '%', color: compliantBlocks === totalBlocks ? '#34d399' : '#f59e0b', mono: true },
-              { label: 'Compliant Blocks', value: compliantBlocks, unit: ` / ${totalBlocks}`, color: '#34d399', mono: true },
-              { label: 'Fully Compliant Days', value: results.filter(r => r.schedule.summary.fully_compliant).length, unit: ` / ${results.length}`, color: '#10b981', mono: true },
+              { label: 'Period', value: periodLabel, unit: '', color: '#818cf8', mono: false, sub: null },
+              { label: 'Overall Compliance', value: ((compliantBlocks / totalBlocks) * 100).toFixed(1), unit: '%', color: compliantBlocks === totalBlocks ? '#34d399' : '#f59e0b', mono: true, sub: '75% RTC floor · all 96 blocks' },
+              { label: 'Compliant Blocks', value: compliantBlocks, unit: ` / ${totalBlocks}`, color: '#34d399', mono: true, sub: null },
+              { label: 'Fully Compliant Days (75%)', value: results.filter(r => r.schedule.summary.fully_compliant).length, unit: ` / ${results.length}`, color: '#10b981', mono: true, sub: `All blocks ≥ 75% of RTC` },
+              { label: 'Days ≥ 50% Blocks Compliant', value: compliantDays50Pct, unit: ` / ${results.length}`, color: '#fbbf24', mono: true, sub: `≥ 48 of 96 blocks at 75% RTC floor` },
             ].map(kpi => (
               <div key={kpi.label} className="glass-panel multiday-kpi-card">
                 <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>{kpi.label}</div>
                 <div style={{ fontSize: kpi.mono === false ? '16px' : '24px', fontWeight: '800', color: kpi.color, fontFamily: kpi.mono === false ? 'var(--font-sans)' : 'JetBrains Mono, monospace' }}>
                   {kpi.value}<span style={{ fontSize: '13px', fontWeight: '400', color: '#64748b' }}>{kpi.unit}</span>
                 </div>
+                {kpi.sub && <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px' }}>{kpi.sub}</div>}
               </div>
             ))}
           </div>
