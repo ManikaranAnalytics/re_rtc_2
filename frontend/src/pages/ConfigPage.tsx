@@ -1,10 +1,19 @@
 import React from 'react';
 import { Settings2, Table2 } from 'lucide-react';
 import { useOptimizer } from '../context/OptimizerContext';
+import {
+  PSP_MAX_CAPACITY_MWH,
+  PSP_SLIDER_MAX_CHARGE_MW,
+  PSP_SLIDER_MAX_DISCHARGE_MW,
+  PSP_SLIDER_MAX_MIN_DISPATCH_MW,
+} from '../utils/constants';
 
 export default function ConfigPage() {
   const {
     maxSocMwh, setMaxSocMwh,
+    maxChargeMw, setMaxChargeMw,
+    maxDischargeMw, setMaxDischargeMw,
+    minDispatchMw, setMinDispatchMw,
     curtailmentEnabled, setCurtailmentEnabled,
     curtailmentStart, setCurtailmentStart,
     curtailmentEnd, setCurtailmentEnd,
@@ -79,12 +88,53 @@ export default function ConfigPage() {
               <span className="config-label">PSP Max Capacity</span>
               <span className="config-value" style={{ color: '#a78bfa' }}>{maxSocMwh.toFixed(0)} MWh</span>
             </div>
-            <input type="range" min="10" max="360" step="5" className="range-slider" value={maxSocMwh} onChange={e => setMaxSocMwh(parseFloat(e.target.value))} style={{ '--color-wind': '#a78bfa' } as React.CSSProperties} />
+            <input type="range" min="10" max={PSP_MAX_CAPACITY_MWH} step="5" className="range-slider" value={maxSocMwh} onChange={e => setMaxSocMwh(parseFloat(e.target.value))} style={{ '--color-wind': '#a78bfa' } as React.CSSProperties} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span>10 MWh (min)</span>
-              <span style={{ color: maxSocMwh === 360 ? '#64748b' : '#f59e0b' }}>
-                {maxSocMwh < 360 ? `${(360 - maxSocMwh).toFixed(0)} MWh below ceiling` : 'Full 360 MWh (CERC cap)'}
+              <span style={{ color: maxSocMwh === PSP_MAX_CAPACITY_MWH ? '#64748b' : '#f59e0b' }}>
+                {maxSocMwh < PSP_MAX_CAPACITY_MWH
+                  ? `${(PSP_MAX_CAPACITY_MWH - maxSocMwh).toFixed(0)} MWh below max`
+                  : `Full ${PSP_MAX_CAPACITY_MWH} MWh`}
               </span>
+            </div>
+          </div>
+
+          {/* Max Drawal (Charge) */}
+          <div className="config-group">
+            <div className="config-label-area">
+              <span className="config-label">Max Drawal (Charge)</span>
+              <span className="config-value" style={{ color: '#38bdf8' }}>{maxChargeMw.toFixed(0)} MW</span>
+            </div>
+            <input type="range" min="0" max={PSP_SLIDER_MAX_CHARGE_MW} step="1" className="range-slider" value={maxChargeMw} onChange={e => setMaxChargeMw(parseFloat(e.target.value))} style={{ '--color-wind': '#38bdf8' } as React.CSSProperties} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              <span>0 MW</span>
+              <span>Grid → PSP charging limit</span>
+            </div>
+          </div>
+
+          {/* Max Injection (Discharge) */}
+          <div className="config-group">
+            <div className="config-label-area">
+              <span className="config-label">Max Injection (Discharge)</span>
+              <span className="config-value" style={{ color: '#34d399' }}>{maxDischargeMw.toFixed(0)} MW</span>
+            </div>
+            <input type="range" min="0" max={PSP_SLIDER_MAX_DISCHARGE_MW} step="1" className="range-slider" value={maxDischargeMw} onChange={e => setMaxDischargeMw(parseFloat(e.target.value))} style={{ '--color-wind': '#34d399' } as React.CSSProperties} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              <span>0 MW</span>
+              <span>PSP → grid discharge limit</span>
+            </div>
+          </div>
+
+          {/* Min Dispatch (CERC) */}
+          <div className="config-group">
+            <div className="config-label-area">
+              <span className="config-label">Min Dispatch (CERC)</span>
+              <span className="config-value" style={{ color: '#fbbf24' }}>{minDispatchMw.toFixed(0)} MW</span>
+            </div>
+            <input type="range" min="0" max={PSP_SLIDER_MAX_MIN_DISPATCH_MW} step="1" className="range-slider" value={minDispatchMw} onChange={e => setMinDispatchMw(parseFloat(e.target.value))} style={{ '--color-wind': '#fbbf24' } as React.CSSProperties} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+              <span>0 MW (off)</span>
+              <span>Min charge/discharge when PSP runs</span>
             </div>
           </div>
 
@@ -112,7 +162,8 @@ export default function ConfigPage() {
             <span style={{ fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px', fontSize: '14px' }}>Regulatory Constraints:</span>
             <ul style={{ paddingLeft: '18px', margin: 0 }}>
               <li style={{ marginBottom: '6px' }}>Curtailment: {curtailmentEnabled ? `Blocks ${curtailmentStart}–${curtailmentEnd}` : 'Disabled this season'}.</li>
-              <li style={{ marginBottom: '6px' }}>Orvakallu PSP storage capacity capped at 360 MWh.</li>
+              <li style={{ marginBottom: '6px' }}>Orvakallu PSP storage capacity configurable up to {PSP_MAX_CAPACITY_MWH} MWh.</li>
+              <li style={{ marginBottom: '6px' }}>PSP rates: charge ≤ {maxChargeMw} MW, discharge ≤ {maxDischargeMw} MW, min dispatch {minDispatchMw} MW.</li>
               <li>Min delivery floor: 75% of RTC commitment.</li>
             </ul>
           </div>

@@ -3,7 +3,7 @@ import '../../utils/chartSetup';
 import { useOptimizer } from '../../context/OptimizerContext';
 
 export default function SoCTimelineModal() {
-  const { socModalOpen, setSocModalOpen, blocks, selectedDate, maxSocMwh } = useOptimizer();
+  const { socModalOpen, setSocModalOpen, blocks, selectedDate, maxSocMwh, minDispatchMw } = useOptimizer();
 
   if (!socModalOpen || blocks.length === 0) return null;
 
@@ -100,7 +100,7 @@ export default function SoCTimelineModal() {
               PSP State of Charge — {selectedDate}
             </h3>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>
-              96-block intraday SoC profile · Max capacity: {maxSocMwh} MWh · Min dispatch: 6 MW (CERC)
+              96-block intraday SoC profile · Max capacity: {maxSocMwh} MWh · Min dispatch: {minDispatchMw} MW (CERC)
             </p>
           </div>
           <button

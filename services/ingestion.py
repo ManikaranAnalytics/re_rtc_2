@@ -44,7 +44,7 @@ def parse_and_cache_excel():
     # Col 17 (Index 17): Time Block Number (TB 1-96)
     
     clean_df = pd.DataFrame()
-    clean_df['date'] = pd.to_datetime(data_rows.iloc[:, 0]).dt.strftime('%Y-%m-%d')
+    clean_df['date'] = pd.to_datetime(data_rows.iloc[:, 0], dayfirst=True).dt.strftime('%Y-%m-%d')
     clean_df['time'] = data_rows.iloc[:, 1].astype(str)
     clean_df['block'] = pd.to_numeric(data_rows.iloc[:, 17], errors='coerce').astype(int)
     clean_df['wind_speed_2024'] = pd.to_numeric(data_rows.iloc[:, 2], errors='coerce').fillna(0.0)
@@ -65,7 +65,10 @@ def load_june_data():
     """Loads the cached June data from CSV."""
     if not os.path.exists(JUNE_DATA_CSV):
         parse_and_cache_excel()
-    return pd.read_csv(JUNE_DATA_CSV)
+    df = pd.read_csv(JUNE_DATA_CSV)
+    # Normalize to ISO dates (CSV may use DD-MM-YYYY from Excel export)
+    df['date'] = pd.to_datetime(df['date'], dayfirst=True).dt.strftime('%Y-%m-%d')
+    return df
 
 if __name__ == "__main__":
     # Test script execution

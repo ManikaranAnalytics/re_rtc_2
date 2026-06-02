@@ -6,7 +6,7 @@ export default function GenerationPage() {
       <div className="page-header-bar">
         <h2 className="page-heading">Generation Forecast Input</h2>
         <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-          Edit wind speed and solar generation per 15-minute block. Changes auto-sync to the optimizer.
+          Choose a simulation day, then edit wind speed and solar generation per 15-minute block. Changes auto-sync to the optimizer.
         </p>
       </div>
       <GenerationInputTable />

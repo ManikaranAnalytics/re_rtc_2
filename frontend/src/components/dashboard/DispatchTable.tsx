@@ -8,7 +8,7 @@ export default function DispatchTable() {
     blocks, rtcCommitment, scheduleData,
     selectedDate, wtgCount, solarAc,
     curtailmentEnabled, curtailmentStart, curtailmentEnd,
-    roundtripLoss, maxSocMwh,
+    roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw,
   } = useOptimizer();
 
   const [excelLoading, setExcelLoading] = useState(false);
@@ -28,7 +28,9 @@ export default function DispatchTable() {
         roundtrip_loss_pct: String(roundtripLoss),
         min_compliance_ratio: '0.75',
         max_soc_mwh: String(maxSocMwh),
-        min_dispatch_mw: '6',
+        max_charge_mw: String(maxChargeMw),
+        max_discharge_mw: String(maxDischargeMw),
+        min_dispatch_mw: String(minDispatchMw),
       });
       const response = await fetch(`${BASE_URL}/api/export/excel?${params.toString()}`);
       if (!response.ok) throw new Error('Export failed');

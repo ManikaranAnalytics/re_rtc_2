@@ -1,11 +1,18 @@
 import React, { useRef } from 'react';
+import { Calendar } from 'lucide-react';
 import { useOptimizer } from '../../context/OptimizerContext';
+import { JUNE_DATES } from '../../utils/constants';
 import { lookupWindMW } from '../../utils/powerCurve';
+
+function formatSimulationDate(isoDate: string): string {
+  return new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
 
 export default function GenerationInputTable() {
   const {
     rawForecast, genTableEdits, setGenTableEdits,
     genTableExpanded, setGenTableExpanded, wtgCount,
+    selectedDate, setSelectedDate,
   } = useOptimizer();
 
   const genTableRef = useRef<HTMLDivElement>(null);
@@ -57,7 +64,7 @@ export default function GenerationInputTable() {
             🌬️ Generation Input Data (Wind &amp; Solar)
           </h2>
           <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', background: 'rgba(0,210,255,0.1)', border: '1px solid rgba(0,210,255,0.25)', color: '#00d2ff', fontWeight: '600' }}>
-            EDITABLE · 96 BLOCKS
+            {formatSimulationDate(selectedDate)} · 96 BLOCKS
           </span>
           {Object.keys(genTableEdits).length > 0 && (
             <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '10px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#f59e0b', fontWeight: '700' }}>
@@ -65,7 +72,23 @@ export default function GenerationInputTable() {
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#94a3b8' }}>
+            <Calendar size={14} style={{ color: '#a5b4fc', flexShrink: 0 }} />
+            <span style={{ fontWeight: '600', whiteSpace: 'nowrap' }}>Day</span>
+            <select
+              className="date-select"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ minWidth: '148px' }}
+            >
+              {JUNE_DATES.map(date => (
+                <option key={date} value={date}>
+                  {formatSimulationDate(date)}
+                </option>
+              ))}
+            </select>
+          </label>
           {Object.keys(genTableEdits).length > 0 && (
             <button
               onClick={() => setGenTableEdits({})}
@@ -92,7 +115,7 @@ export default function GenerationInputTable() {
             <span>🟡 <strong style={{ color: '#f59e0b' }}>Amber rows</strong> have been modified and will override the forecast in the optimizer.</span>
           </div>
 
-          <div className="table-container gen-input-table" ref={genTableRef} style={{ maxHeight: '440px' }}>
+          <div className="table-container gen-input-table" ref={genTableRef} style={{ maxHeight: '440px' }} key={selectedDate}>
             <table className="schedule-table" style={{ tableLayout: 'fixed' }}>
               <thead>
                 <tr>

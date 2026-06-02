@@ -52,7 +52,14 @@ def generate_forecast(
     day_data = june_df[june_df['date'] == historical_date_str].copy()
 
     if len(day_data) == 0:
-        day_data = june_df.iloc[0:96].copy()
+        # Fallback: match by day-of-month if date column format differs
+        june_dates = pd.to_datetime(june_df['date'], errors='coerce')
+        day_data = june_df[june_dates.dt.day == requested_day].copy()
+
+    if len(day_data) == 0:
+        raise ValueError(
+            f"No June historical data for day {requested_day} (looked for {historical_date_str})"
+        )
 
     results = []
     for _, row in day_data.iterrows():

@@ -1,6 +1,22 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
+from services.constants import (
+    PSP_DEFAULT_CAPACITY_MWH,
+    PSP_DEFAULT_MAX_CHARGE_MW,
+    PSP_DEFAULT_MAX_DISCHARGE_MW,
+    PSP_DEFAULT_MIN_DISPATCH_MW,
+    PSP_MAX_CAPACITY_MWH,
+    PSP_MAX_CHARGE_MW,
+    PSP_MAX_DISCHARGE_MW,
+    PSP_MAX_MIN_DISPATCH_MW,
+    PSP_MIN_CAPACITY_MWH,
+)
+
+_PSP_MAX = PSP_MAX_CAPACITY_MWH
+_PSP_MIN = PSP_MIN_CAPACITY_MWH
+_PSP_DEFAULT = PSP_DEFAULT_CAPACITY_MWH
+
 # ── Request / Config Schemas ──────────────────────────────────────────────────
 
 class ScheduleRequest(BaseModel):
@@ -15,10 +31,12 @@ class ScheduleRequest(BaseModel):
     # PSP config
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0, description="PSP round-trip loss % (e.g. 20 = 20% loss)")
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0, description="Min delivery as fraction of RTC (0.75 = 75%)")
-    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0, description="PSP maximum storage capacity in MWh (capped at 360 MWh)")
-    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0, description="Minimum PSP charge/discharge MW (CERC compliance — 0 or >= this value)")
+    max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX, description=f"PSP maximum storage capacity in MWh (up to {_PSP_MAX:.0f} MWh)")
+    max_charge_mw: float = Field(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW, description="Max PSP drawal (charging) rate in MW")
+    max_discharge_mw: float = Field(PSP_DEFAULT_MAX_DISCHARGE_MW, ge=0.0, le=PSP_MAX_DISCHARGE_MW, description="Max PSP injection (discharge) rate in MW")
+    min_dispatch_mw: float = Field(PSP_DEFAULT_MIN_DISPATCH_MW, ge=0.0, le=PSP_MAX_MIN_DISPATCH_MW, description="Minimum PSP charge/discharge MW (CERC — 0 or >= this value)")
     # Carry-forward from previous day
-    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC carried forward from end of previous day (MWh)")
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=_PSP_MAX, description="SoC carried forward from end of previous day (MWh)")
     prev_day_charge_schedule: Optional[List[float]] = Field(
         None, description="96-element array of PSP charge MW per block from previous day (kept for API compatibility)"
     )
@@ -94,9 +112,11 @@ class MaxRTCRequest(BaseModel):
     curtailment_end_block: int = Field(64, ge=1, le=96)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
-    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day (MWh) — used in dispatch simulation")
-    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0, description="PSP maximum storage capacity in MWh")
-    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0, description="Minimum PSP charge/discharge MW (CERC compliance)")
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=_PSP_MAX, description="SoC at start of day (MWh) — used in dispatch simulation")
+    max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX, description="PSP maximum storage capacity in MWh")
+    max_charge_mw: float = Field(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW)
+    max_discharge_mw: float = Field(PSP_DEFAULT_MAX_DISCHARGE_MW, ge=0.0, le=PSP_MAX_DISCHARGE_MW)
+    min_dispatch_mw: float = Field(PSP_DEFAULT_MIN_DISPATCH_MW, ge=0.0, le=PSP_MAX_MIN_DISPATCH_MW, description="Minimum PSP charge/discharge MW (CERC compliance)")
 
 
 class MaxRTCResponse(BaseModel):
@@ -132,9 +152,11 @@ class RTCRangeRequest(BaseModel):
     curtailment_end_block: int = Field(64, ge=1, le=96)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
-    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0)
-    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0)
-    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day (MWh) — used in the Manikaran Suggestion binary search")
+    max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX)
+    max_charge_mw: float = Field(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW)
+    max_discharge_mw: float = Field(PSP_DEFAULT_MAX_DISCHARGE_MW, ge=0.0, le=PSP_MAX_DISCHARGE_MW)
+    min_dispatch_mw: float = Field(PSP_DEFAULT_MIN_DISPATCH_MW, ge=0.0, le=PSP_MAX_MIN_DISPATCH_MW)
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=_PSP_MAX, description="SoC at start of day (MWh) — used in the Manikaran Suggestion binary search")
     # Optional data overrides
     block_overrides: Optional[List[Dict[str, Any]]] = Field(None)
 
@@ -162,9 +184,11 @@ class MultiDayMaxRTCRequest(BaseModel):
     curtailment_end_block: int = Field(64, ge=1, le=96)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0)
-    max_soc_mwh: float = Field(360.0, ge=10.0, le=360.0)
-    min_dispatch_mw: float = Field(6.0, ge=0.0, le=60.0)
-    initial_soc_mwh: float = Field(0.0, ge=0.0, le=360.0, description="SoC at start of day 1 (default 0 = clean slate)")
+    max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX)
+    max_charge_mw: float = Field(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW)
+    max_discharge_mw: float = Field(PSP_DEFAULT_MAX_DISCHARGE_MW, ge=0.0, le=PSP_MAX_DISCHARGE_MW)
+    min_dispatch_mw: float = Field(PSP_DEFAULT_MIN_DISPATCH_MW, ge=0.0, le=PSP_MAX_MIN_DISPATCH_MW)
+    initial_soc_mwh: float = Field(0.0, ge=0.0, le=_PSP_MAX, description="SoC at start of day 1 (default 0 = clean slate)")
 
 
 class MultiDayMaxRTCResponse(BaseModel):

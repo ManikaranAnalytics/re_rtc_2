@@ -1,8 +1,13 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ScheduleResponse, RTCRangeData, RawForecastRow, GenEdit, BlockData, SummaryData,
 } from '../types';
 import { BASE_URL, JUNE_DATES } from '../utils/constants';
+import {
+  loadOptimizerConfig,
+  saveOptimizerConfig,
+  type PersistedOptimizerConfig,
+} from '../utils/optimizerConfigStorage';
 import { lookupWindMW } from '../utils/powerCurve';
 
 /* ───────────────────── Context Type ───────────────────── */
@@ -19,6 +24,12 @@ interface OptimizerContextValue {
   setRtcCommitment: React.Dispatch<React.SetStateAction<number>>;
   maxSocMwh: number;
   setMaxSocMwh: React.Dispatch<React.SetStateAction<number>>;
+  maxChargeMw: number;
+  setMaxChargeMw: React.Dispatch<React.SetStateAction<number>>;
+  maxDischargeMw: number;
+  setMaxDischargeMw: React.Dispatch<React.SetStateAction<number>>;
+  minDispatchMw: number;
+  setMinDispatchMw: React.Dispatch<React.SetStateAction<number>>;
 
   // Curtailment
   curtailmentEnabled: boolean;
@@ -90,26 +101,31 @@ export function useOptimizer(): OptimizerContextValue {
 /* ───────────────────── Provider ───────────────────── */
 
 export function OptimizerProvider({ children }: { children: React.ReactNode }) {
-  // Config state
-  const [selectedDate, setSelectedDate] = useState("2026-06-01");
-  const [wtgCount, setWtgCount] = useState(15);
-  const [solarAc, setSolarAc] = useState(60);
-  const [rtcCommitment, setRtcCommitment] = useState(15.0);
-  const [maxSocMwh, setMaxSocMwh] = useState(360.0);
+  const [savedConfig] = useState(loadOptimizerConfig);
+
+  // Config state (restored from localStorage on first load)
+  const [selectedDate, setSelectedDate] = useState(savedConfig.selectedDate);
+  const [wtgCount, setWtgCount] = useState(savedConfig.wtgCount);
+  const [solarAc, setSolarAc] = useState(savedConfig.solarAc);
+  const [rtcCommitment, setRtcCommitment] = useState(savedConfig.rtcCommitment);
+  const [maxSocMwh, setMaxSocMwh] = useState(savedConfig.maxSocMwh);
+  const [maxChargeMw, setMaxChargeMw] = useState(savedConfig.maxChargeMw);
+  const [maxDischargeMw, setMaxDischargeMw] = useState(savedConfig.maxDischargeMw);
+  const [minDispatchMw, setMinDispatchMw] = useState(savedConfig.minDispatchMw);
 
   // Curtailment config
-  const [curtailmentEnabled, setCurtailmentEnabled] = useState(true);
-  const [curtailmentStart, setCurtailmentStart] = useState(37);
-  const [curtailmentEnd, setCurtailmentEnd] = useState(64);
+  const [curtailmentEnabled, setCurtailmentEnabled] = useState(savedConfig.curtailmentEnabled);
+  const [curtailmentStart, setCurtailmentStart] = useState(savedConfig.curtailmentStart);
+  const [curtailmentEnd, setCurtailmentEnd] = useState(savedConfig.curtailmentEnd);
 
   // PSP loss %
-  const [roundtripLoss, setRoundtripLoss] = useState(20.0);
+  const [roundtripLoss, setRoundtripLoss] = useState(savedConfig.roundtripLoss);
 
   // Active sidebar tab
   const [sideTab, setSideTab] = useState<'config' | 'data'>('config');
 
   // Per-block editable overrides
-  const [blockOverrides, setBlockOverrides] = useState<Record<number, { wind_mw: string; solar_mw: string }>>({});
+  const [blockOverrides, setBlockOverrides] = useState(savedConfig.blockOverrides);
 
   // API response state
   const [scheduleData, setScheduleData] = useState<ScheduleResponse | null>(null);
@@ -122,9 +138,58 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   const [rangeExpanded, setRangeExpanded] = useState(true);
 
   // Carry-forward state
-  const [initialSocMwh, setInitialSocMwh] = useState(0.0);
-  const [prevDayChargeSchedule, setPrevDayChargeSchedule] = useState<number[] | null>(null);
-  const [carryFromDate, setCarryFromDate] = useState<string | null>(null);
+  const [initialSocMwh, setInitialSocMwh] = useState(savedConfig.initialSocMwh);
+  const [prevDayChargeSchedule, setPrevDayChargeSchedule] = useState<number[] | null>(
+    savedConfig.prevDayChargeSchedule,
+  );
+  const [carryFromDate, setCarryFromDate] = useState<string | null>(savedConfig.carryFromDate);
+
+  const skipPersistRef = useRef(true);
+
+  const persistConfig = useCallback((): PersistedOptimizerConfig => {
+    const config: PersistedOptimizerConfig = {
+      selectedDate,
+      wtgCount,
+      solarAc,
+      rtcCommitment,
+      maxSocMwh,
+      maxChargeMw,
+      maxDischargeMw,
+      minDispatchMw,
+      curtailmentEnabled,
+      curtailmentStart,
+      curtailmentEnd,
+      roundtripLoss,
+      initialSocMwh,
+      carryFromDate,
+      prevDayChargeSchedule,
+      blockOverrides,
+    };
+    saveOptimizerConfig(config);
+    return config;
+  }, [
+    selectedDate, wtgCount, solarAc, rtcCommitment,
+    maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw,
+    curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss,
+    initialSocMwh, carryFromDate, prevDayChargeSchedule, blockOverrides,
+  ]);
+
+  useEffect(() => {
+    if (skipPersistRef.current) {
+      skipPersistRef.current = false;
+      return;
+    }
+    persistConfig();
+  }, [persistConfig]);
+
+  useEffect(() => {
+    const onBeforeUnload = () => persistConfig();
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      persistConfig();
+    };
+  }, [persistConfig]);
 
   // SoC detail modal
   const [socModalOpen, setSocModalOpen] = useState(false);
@@ -188,18 +253,42 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
-            min_dispatch_mw: 6,
+            max_charge_mw: maxChargeMw,
+            max_discharge_mw: maxDischargeMw,
+            min_dispatch_mw: minDispatchMw,
             block_overrides: buildOverridesList(),
             initial_soc_mwh: initialSocMwh,
             prev_day_charge_schedule: prevDayChargeSchedule,
           })
         });
-        if (!response.ok) throw new Error(`Error: ${response.statusText}`);
+        if (!response.ok) {
+          let detail = response.statusText;
+          try {
+            const errBody = await response.json();
+            if (Array.isArray(errBody.detail)) {
+              detail = errBody.detail.map((d: { msg?: string; loc?: string[] }) =>
+                d.loc ? `${d.loc.join('.')}: ${d.msg}` : d.msg
+              ).join('; ');
+            } else if (typeof errBody.detail === 'string') {
+              detail = errBody.detail;
+            }
+          } catch { /* ignore parse errors */ }
+          throw new Error(detail);
+        }
         const data: ScheduleResponse = await response.json();
         setScheduleData(data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Failed to fetch schedule data:", err);
-        setError("Could not connect to the optimization backend. Please ensure the FastAPI server is running.");
+        const message = err instanceof Error ? err.message : String(err);
+        const isNetwork =
+          err instanceof TypeError ||
+          message.toLowerCase().includes('failed to fetch') ||
+          message.toLowerCase().includes('network');
+        setError(
+          isNetwork
+            ? "Could not connect to the optimization backend. Please ensure the FastAPI server is running."
+            : `Schedule request failed: ${message}`
+        );
       } finally {
         setLoading(false);
       }
@@ -207,7 +296,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
 
     const handler = setTimeout(() => { fetchSchedule(); }, 150);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
 
   // ── Roll to next day ──
   const handleRollToNextDay = useCallback(() => {
@@ -247,7 +336,9 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
-            min_dispatch_mw: 6,
+            max_charge_mw: maxChargeMw,
+            max_discharge_mw: maxDischargeMw,
+            min_dispatch_mw: minDispatchMw,
             initial_soc_mwh: initialSocMwh,
             block_overrides: buildOverridesList(),
           })
@@ -264,7 +355,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     };
     const handler = setTimeout(fetchRange, 300);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, initialSocMwh, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, buildOverridesList]);
 
   // ── Fetch raw forecast ──
   useEffect(() => {
@@ -302,6 +393,9 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     solarAc, setSolarAc,
     rtcCommitment, setRtcCommitment,
     maxSocMwh, setMaxSocMwh,
+    maxChargeMw, setMaxChargeMw,
+    maxDischargeMw, setMaxDischargeMw,
+    minDispatchMw, setMinDispatchMw,
     curtailmentEnabled, setCurtailmentEnabled,
     curtailmentStart, setCurtailmentStart,
     curtailmentEnd, setCurtailmentEnd,

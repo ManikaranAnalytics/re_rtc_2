@@ -1,5 +1,16 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
+from services.constants import (
+    PSP_DEFAULT_CAPACITY_MWH,
+    PSP_DEFAULT_MAX_CHARGE_MW,
+    PSP_DEFAULT_MAX_DISCHARGE_MW,
+    PSP_DEFAULT_MIN_DISPATCH_MW,
+    PSP_MAX_CAPACITY_MWH,
+    PSP_MAX_CHARGE_MW,
+    PSP_MAX_DISCHARGE_MW,
+    PSP_MAX_MIN_DISPATCH_MW,
+    PSP_MIN_CAPACITY_MWH,
+)
 from services.forecast import generate_forecast
 from services.psp_optimizer import optimize_psp_dispatch, calculate_rtc_range
 from services.excel_export import build_excel
@@ -17,9 +28,11 @@ def export_excel(
     curtailment_end_block: int = Query(64, ge=1, le=96),
     roundtrip_loss_pct: float = Query(20.0, ge=0.0, le=50.0),
     min_compliance_ratio: float = Query(0.75, ge=0.5, le=1.0),
-    initial_soc_mwh: float = Query(0.0, ge=0.0, le=360.0),
-    max_soc_mwh: float = Query(360.0, ge=10.0, le=360.0),
-    min_dispatch_mw: float = Query(6.0, ge=0.0, le=60.0),
+    initial_soc_mwh: float = Query(0.0, ge=0.0, le=PSP_MAX_CAPACITY_MWH),
+    max_soc_mwh: float = Query(PSP_DEFAULT_CAPACITY_MWH, ge=PSP_MIN_CAPACITY_MWH, le=PSP_MAX_CAPACITY_MWH),
+    max_charge_mw: float = Query(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW),
+    max_discharge_mw: float = Query(PSP_DEFAULT_MAX_DISCHARGE_MW, ge=0.0, le=PSP_MAX_DISCHARGE_MW),
+    min_dispatch_mw: float = Query(PSP_DEFAULT_MIN_DISPATCH_MW, ge=0.0, le=PSP_MAX_MIN_DISPATCH_MW),
 ):
     """
     Generates and returns a downloadable Excel workbook (.xlsx) containing:
@@ -43,6 +56,8 @@ def export_excel(
             rtc_commitment=rtc_commitment_mw,
             initial_soc=initial_soc_mwh,
             max_soc=max_soc_mwh,
+            max_charge=max_charge_mw,
+            max_discharge=max_discharge_mw,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
             min_dispatch_mw=min_dispatch_mw,
@@ -51,6 +66,8 @@ def export_excel(
         rtc_range = calculate_rtc_range(
             forecast_df=forecast_df,
             max_soc=max_soc_mwh,
+            max_charge=max_charge_mw,
+            max_discharge=max_discharge_mw,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
             min_dispatch_mw=min_dispatch_mw,

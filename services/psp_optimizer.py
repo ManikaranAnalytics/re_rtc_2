@@ -218,6 +218,8 @@ def find_max_rtc_no_shortfall(
     tolerance: float = 0.05,
     min_dispatch_mw: float = 6.0,
     max_soc: float = 360.0,
+    max_charge: float = 60.0,
+    max_discharge: float = 50.0,
     initial_soc: float = 0.0,
 ) -> float:
     """
@@ -233,6 +235,8 @@ def find_max_rtc_no_shortfall(
     res_low = optimize_psp_dispatch(
         forecast_df, rtc_commitment=low,
         max_soc=max_soc,
+        max_charge=max_charge,
+        max_discharge=max_discharge,
         initial_soc=initial_soc,
         roundtrip_loss_pct=roundtrip_loss_pct,
         min_compliance_ratio=min_compliance_ratio,
@@ -247,6 +251,8 @@ def find_max_rtc_no_shortfall(
         res = optimize_psp_dispatch(
             forecast_df, rtc_commitment=mid,
             max_soc=max_soc,
+            max_charge=max_charge,
+            max_discharge=max_discharge,
             initial_soc=initial_soc,
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
@@ -267,6 +273,8 @@ def find_max_rtc_multiday(
     min_compliance_ratio: float = 0.75,
     min_dispatch_mw: float = 6.0,
     max_soc: float = 360.0,
+    max_charge: float = 60.0,
+    max_discharge: float = 50.0,
     initial_soc: float = 0.0,
     low: float = 0.0,
     high: float = 300.0,
@@ -298,6 +306,8 @@ def find_max_rtc_multiday(
                 rtc_commitment=rtc,
                 initial_soc=soc,
                 max_soc=max_soc,
+                max_charge=max_charge,
+                max_discharge=max_discharge,
                 roundtrip_loss_pct=roundtrip_loss_pct,
                 min_compliance_ratio=min_compliance_ratio,
                 min_dispatch_mw=min_dispatch_mw,
@@ -326,6 +336,7 @@ def find_max_rtc_multiday(
 def calculate_rtc_range(
     forecast_df: pd.DataFrame,
     max_soc: float = 360.0,
+    max_charge: float = 60.0,
     max_discharge: float = 50.0,
     roundtrip_loss_pct: float = 20.0,
     min_compliance_ratio: float = 0.75,
@@ -387,6 +398,8 @@ def calculate_rtc_range(
         roundtrip_loss_pct=roundtrip_loss_pct,
         min_compliance_ratio=min_compliance_ratio,
         max_soc=max_soc,
+        max_charge=max_charge,
+        max_discharge=max_discharge,
         min_dispatch_mw=min_dispatch_mw,
         initial_soc=initial_soc,
         low=0.0,

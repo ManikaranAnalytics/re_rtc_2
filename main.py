@@ -53,5 +53,13 @@ else:
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
-    workers = int(os.getenv("WEB_CONCURRENCY", 2))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, workers=workers, reload=False)
+    # Single worker + reload in dev so schema/code changes apply without a manual restart
+    workers = int(os.getenv("WEB_CONCURRENCY", 1))
+    use_reload = os.getenv("DEV_RELOAD", "true").lower() in ("1", "true", "yes")
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        workers=workers,
+        reload=use_reload and workers == 1,
+    )

@@ -38,6 +38,18 @@ def _apply_overrides(forecast_df: pd.DataFrame, overrides) -> pd.DataFrame:
     return df
 
 
+def _psp_params(request) -> dict:
+    """PSP limits shared across schedule / RTC / multi-day endpoints."""
+    return {
+        "max_soc": request.max_soc_mwh,
+        "max_charge": request.max_charge_mw,
+        "max_discharge": request.max_discharge_mw,
+        "min_dispatch_mw": request.min_dispatch_mw,
+        "roundtrip_loss_pct": request.roundtrip_loss_pct,
+        "min_compliance_ratio": request.min_compliance_ratio,
+    }
+
+
 @router.post("/schedule", response_model=ScheduleResponse)
 def get_optimal_schedule(request: ScheduleRequest):
     """
@@ -64,11 +76,8 @@ def get_optimal_schedule(request: ScheduleRequest):
             forecast_df=forecast_df,
             rtc_commitment=request.rtc_commitment_mw,
             initial_soc=request.initial_soc_mwh,
-            max_soc=request.max_soc_mwh,
-            roundtrip_loss_pct=request.roundtrip_loss_pct,
-            min_compliance_ratio=request.min_compliance_ratio,
-            min_dispatch_mw=request.min_dispatch_mw,
             prev_day_charge_schedule=request.prev_day_charge_schedule,
+            **_psp_params(request),
         )
 
         return dispatch_results
@@ -92,23 +101,18 @@ def get_max_possible_rtc(request: MaxRTCRequest):
             curtailment_end_block=request.curtailment_end_block,
         )
 
+        psp = _psp_params(request)
         max_rtc = find_max_rtc_no_shortfall(
             forecast_df=forecast_df,
-            roundtrip_loss_pct=request.roundtrip_loss_pct,
-            min_compliance_ratio=request.min_compliance_ratio,
             initial_soc=request.initial_soc_mwh,
-            max_soc=request.max_soc_mwh,
-            min_dispatch_mw=request.min_dispatch_mw,
+            **psp,
         )
 
         dispatch_results = optimize_psp_dispatch(
             forecast_df=forecast_df,
             rtc_commitment=max_rtc,
             initial_soc=request.initial_soc_mwh,
-            max_soc=request.max_soc_mwh,
-            min_dispatch_mw=request.min_dispatch_mw,
-            roundtrip_loss_pct=request.roundtrip_loss_pct,
-            min_compliance_ratio=request.min_compliance_ratio,
+            **psp,
         )
 
         return MaxRTCResponse(
@@ -142,13 +146,11 @@ def get_rtc_range(request: RTCRangeRequest):
 
         forecast_df = _apply_overrides(forecast_df, request.block_overrides)
 
+        psp = _psp_params(request)
         result = calculate_rtc_range(
             forecast_df=forecast_df,
-            roundtrip_loss_pct=request.roundtrip_loss_pct,
-            min_compliance_ratio=request.min_compliance_ratio,
-            max_soc=request.max_soc_mwh,
-            min_dispatch_mw=request.min_dispatch_mw,
             initial_soc=request.initial_soc_mwh,
+            **psp,
         )
         return result
     except Exception as e:
@@ -192,13 +194,10 @@ def get_multi_day_max_rtc(request: MultiDayMaxRTCRequest):
 
         optimal_rtc = find_max_rtc_multiday(
             forecast_dfs=forecast_dfs,
-            roundtrip_loss_pct=request.roundtrip_loss_pct,
-            min_compliance_ratio=request.min_compliance_ratio,
-            min_dispatch_mw=request.min_dispatch_mw,
-            max_soc=request.max_soc_mwh,
             initial_soc=request.initial_soc_mwh,
             low=0.0,
             high=search_high,
+            **_psp_params(request),
         )
 
         return MultiDayMaxRTCResponse(

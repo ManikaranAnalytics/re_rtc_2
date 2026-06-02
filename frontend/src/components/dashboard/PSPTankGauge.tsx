@@ -1,7 +1,10 @@
 import { useOptimizer } from '../../context/OptimizerContext';
 
 export default function PSPTankGauge() {
-  const { summary, maxSocMwh, roundtripLoss, blocks, setSocModalOpen } = useOptimizer();
+  const {
+    summary, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw,
+    roundtripLoss, blocks, setSocModalOpen,
+  } = useOptimizer();
 
   const endSocMwh = summary?.end_soc_mwh || 0.0;
   const socPercentage = Math.min(((endSocMwh / maxSocMwh) * 100), 100).toFixed(1);
@@ -38,19 +41,19 @@ export default function PSPTankGauge() {
         </div>
         <div className="psp-metric-row">
           <span>Configured Capacity</span>
-          <span style={{ color: maxSocMwh < 360 ? '#f59e0b' : 'var(--text-primary)' }}>{maxSocMwh} MWh</span>
+          <span style={{ color: 'var(--text-primary)' }}>{maxSocMwh} MWh</span>
         </div>
         <div className="psp-metric-row">
           <span>Max Drawal (Charge)</span>
-          <span>60 MW</span>
+          <span>{maxChargeMw} MW</span>
         </div>
         <div className="psp-metric-row">
           <span>Max Injection (Disch.)</span>
-          <span>50 MW</span>
+          <span>{maxDischargeMw} MW</span>
         </div>
         <div className="psp-metric-row">
           <span>Min Dispatch</span>
-          <span style={{ color: '#fbbf24' }}>6 MW (CERC)</span>
+          <span style={{ color: '#fbbf24' }}>{minDispatchMw} MW (CERC)</span>
         </div>
         <div className="psp-metric-row">
           <span>Avg Roundtrip Loss</span>

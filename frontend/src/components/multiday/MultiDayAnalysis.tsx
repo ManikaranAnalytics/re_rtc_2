@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Chart } from 'react-chartjs-2';
 import '../../utils/chartSetup';
 import { useOptimizer } from '../../context/OptimizerContext';
@@ -11,6 +11,7 @@ import type { ScheduleResponse, BlockData } from '../../types';
 export default function MultiDayAnalysis() {
   const {
     wtgCount: ctxWtg, solarAc: ctxSolar, rtcCommitment: ctxRtc, maxSocMwh,
+    maxChargeMw, maxDischargeMw, minDispatchMw,
     curtailmentEnabled, curtailmentStart, curtailmentEnd,
     roundtripLoss,
   } = useOptimizer();
@@ -29,8 +30,21 @@ export default function MultiDayAnalysis() {
   const [solarAc, setSolarAc] = useState(ctxSolar);
   const [rtcCommitment, setRtcCommitment] = useState(ctxRtc);
   const [isStale, setIsStale] = useState(false);
+  const configWatchMounted = useRef(false);
 
   const markStale = () => setIsStale(true);
+
+  // Config changed on Config / single-day (shared context) — saved multi-day results are outdated
+  useEffect(() => {
+    if (!configWatchMounted.current) {
+      configWatchMounted.current = true;
+      return;
+    }
+    if (results.length > 0) setIsStale(true);
+  }, [
+    maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, roundtripLoss,
+    curtailmentEnabled, curtailmentStart, curtailmentEnd, results.length,
+  ]);
 
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -74,7 +88,9 @@ export default function MultiDayAnalysis() {
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
-            min_dispatch_mw: 6,
+            max_charge_mw: maxChargeMw,
+            max_discharge_mw: maxDischargeMw,
+            min_dispatch_mw: minDispatchMw,
             initial_soc_mwh: currentSocMwh,
             prev_day_charge_schedule: prevChargeSchedule,
           })
@@ -109,7 +125,9 @@ export default function MultiDayAnalysis() {
               roundtrip_loss_pct: roundtripLoss,
               min_compliance_ratio: 0.75,
               max_soc_mwh: maxSocMwh,
-              min_dispatch_mw: 6,
+              max_charge_mw: maxChargeMw,
+              max_discharge_mw: maxDischargeMw,
+              min_dispatch_mw: minDispatchMw,
               initial_soc_mwh: 0,
             })
           });
@@ -134,7 +152,7 @@ export default function MultiDayAnalysis() {
       setIsRunning(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, numDays, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh]);
+  }, [startDate, numDays, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw]);
 
   // ── Aggregated Metrics ──
   const n = results.length || 1;

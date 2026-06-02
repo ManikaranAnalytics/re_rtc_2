@@ -2,6 +2,17 @@
 // In Vite dev mode (port 5173) Vite proxies /api to port 8000, so empty string still works.
 export const BASE_URL = '';
 
+/** PSP max storage slider ceiling (MWh) */
+export const PSP_MAX_CAPACITY_MWH = 450;
+
+/** PSP power limits (MW) — defaults match Orvakallu nominal ratings */
+export const PSP_DEFAULT_MAX_CHARGE_MW = 60;
+export const PSP_DEFAULT_MAX_DISCHARGE_MW = 50;
+export const PSP_DEFAULT_MIN_DISPATCH_MW = 6;
+export const PSP_SLIDER_MAX_CHARGE_MW = 100;
+export const PSP_SLIDER_MAX_DISCHARGE_MW = 100;
+export const PSP_SLIDER_MAX_MIN_DISPATCH_MW = 60;
+
 // Generate date options for June 2026
 export const JUNE_DATES = Array.from({ length: 30 }, (_, i) => {
   const day = String(i + 1).padStart(2, '0');
