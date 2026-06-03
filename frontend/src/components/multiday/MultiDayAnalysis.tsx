@@ -3,6 +3,8 @@ import { Chart } from 'react-chartjs-2';
 import '../../utils/chartSetup';
 import { useOptimizer } from '../../context/OptimizerContext';
 import { useMultiDay } from '../../context/MultiDayContext';
+import type { DayResult } from '../../context/MultiDayContext';
+
 import { BASE_URL, JUNE_DATES } from '../../utils/constants';
 import type { ScheduleResponse, BlockData } from '../../types';
 
@@ -10,9 +12,13 @@ import type { ScheduleResponse, BlockData } from '../../types';
 
 export default function MultiDayAnalysis() {
   const {
-    wtgCount: ctxWtg, solarAc: ctxSolar, rtcCommitment: ctxRtc, maxSocMwh,
+    wtgCount, setWtgCount,
+    solarAc, setSolarAc,
+    rtcCommitment, setRtcCommitment,
+    maxSocMwh,
     maxChargeMw, maxDischargeMw, minDispatchMw,
     curtailmentEnabled, curtailmentStart, curtailmentEnd,
+    curtailmentSegments,
     roundtripLoss,
   } = useOptimizer();
 
@@ -25,10 +31,6 @@ export default function MultiDayAnalysis() {
     chartView, setChartView,
   } = useMultiDay();
 
-  // Local config — initialized from global context, independently adjustable here
-  const [wtgCount, setWtgCount] = useState(ctxWtg);
-  const [solarAc, setSolarAc] = useState(ctxSolar);
-  const [rtcCommitment, setRtcCommitment] = useState(ctxRtc);
   const [isStale, setIsStale] = useState(false);
   const configWatchMounted = useRef(false);
 
@@ -45,6 +47,8 @@ export default function MultiDayAnalysis() {
     maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, roundtripLoss,
     curtailmentEnabled, curtailmentStart, curtailmentEnd, results.length,
   ]);
+
+
 
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -83,8 +87,7 @@ export default function MultiDayAnalysis() {
             solar_ac_mw: solarAc,
             rtc_commitment_mw: rtcCommitment,
             curtailment_enabled: curtailmentEnabled,
-            curtailment_start_block: curtailmentStart,
-            curtailment_end_block: curtailmentEnd,
+            curtailment_segments: curtailmentSegments,
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
@@ -120,8 +123,7 @@ export default function MultiDayAnalysis() {
               wtg_count: wtgCount,
               solar_ac_mw: solarAc,
               curtailment_enabled: curtailmentEnabled,
-              curtailment_start_block: curtailmentStart,
-              curtailment_end_block: curtailmentEnd,
+              curtailment_segments: curtailmentSegments,
               roundtrip_loss_pct: roundtripLoss,
               min_compliance_ratio: 0.75,
               max_soc_mwh: maxSocMwh,
@@ -152,7 +154,7 @@ export default function MultiDayAnalysis() {
       setIsRunning(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate, numDays, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw]);
+  }, [startDate, numDays, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw]);
 
   // ── Aggregated Metrics ──
   const n = results.length || 1;

@@ -34,12 +34,12 @@ const MultiDayContext = createContext<MultiDayContextValue | null>(null);
 function readInitial() {
   const saved = loadMultiDayState();
   return {
-    startDate: saved?.startDate ?? '2026-06-01',
-    numDays: saved?.numDays ?? 7,
-    results: (saved?.results ?? []) as DayResult[],
-    optimalRtcMw: saved?.optimalRtcMw ?? null,
+    startDate:          saved?.startDate          ?? '2026-06-01',
+    numDays:            saved?.numDays            ?? 7,
+    results:            (saved?.results ?? []) as DayResult[],
+    optimalRtcMw:       saved?.optimalRtcMw       ?? null,
     optimalSearchError: saved?.optimalSearchError ?? '',
-    chartView: saved?.chartView ?? ('soc' as const),
+    chartView:          saved?.chartView          ?? ('soc' as const),
   };
 }
 
