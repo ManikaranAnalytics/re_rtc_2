@@ -21,11 +21,21 @@ def get_power_for_wind_speed(speed: float) -> float:
         return 0.0
     return power_map.get(rounded, 0.0)
 
+
+def _find_segment(block: int, segments: list) -> dict | None:
+    """Return the first segment whose startBlock <= block <= endBlock, or None."""
+    for seg in segments:
+        if seg['startBlock'] <= block <= seg['endBlock']:
+            return seg
+    return None
+
+
 def generate_forecast(
     date_str: str,
     wtg_count: int,
     solar_ac_mw: float,
     curtailment_enabled: bool = True,
+    curtailment_segments: list | None = None,
     curtailment_start_block: int = 37,
     curtailment_end_block: int = 64,
 ) -> pd.DataFrame:
@@ -39,8 +49,30 @@ def generate_forecast(
     Solar generation:
       solar_mw = max(solar_2024, solar_2025, 0) * 0.9 * (solar_ac_mw / 175)
 
-    Curtailment zeroes both wind and solar in the configured block range.
+    Curtailment — segment-based:
+      Each segment has startBlock, endBlock, and maxMw.
+        maxMw == 0  -> full curtailment: wind=0, solar=0
+        maxMw  > 0  -> combined cap: scale wind+solar proportionally so their sum <= maxMw
+      Blocks not in any segment pass through uncurtailed.
+
+    Backward compatibility:
+      If curtailment_segments is None and curtailment_enabled is True, a single full-curtailment
+      segment is auto-built from curtailment_start_block / curtailment_end_block.
+      If curtailment_enabled is False and curtailment_segments is None, no curtailment is applied.
     """
+    # -- Resolve segments -----------------------------------------------------
+    if curtailment_segments is not None:
+        active_segments = curtailment_segments  # caller supplied explicit segments
+    elif curtailment_enabled:
+        # Backward-compat: build a single full-curtailment segment
+        active_segments = [{
+            'startBlock': curtailment_start_block,
+            'endBlock':   curtailment_end_block,
+            'maxMw':      0.0,
+        }]
+    else:
+        active_segments = []  # curtailment disabled
+
     june_df = load_june_data()
 
     try:
@@ -71,35 +103,64 @@ def generate_forecast(
         speed_2025 = float(row['wind_speed_2025'])
         projected_speed = 0.8 * speed_2025 + 0.2 * speed_2024
 
-        # Power curve lookup → total farm output
+        # Power curve lookup -> total farm output
         power_per_wtg_kw = get_power_for_wind_speed(projected_speed)
-        wind_mw = (power_per_wtg_kw / 1000.0) * wtg_count
+        wind_mw_raw = (power_per_wtg_kw / 1000.0) * wtg_count
 
         # Solar
         solar_2024 = float(row['solar_2024'])
         solar_2025 = float(row['solar_2025'])
         base_solar = max(solar_2024, solar_2025, 0.0)
-        solar_mw_projected = base_solar * 0.9 * (solar_ac_mw / 175.0)
+        solar_mw_raw = base_solar * 0.9 * (solar_ac_mw / 175.0)
 
-        # Curtailment
-        is_curtailment = (
-            curtailment_enabled
-            and curtailment_start_block <= block <= curtailment_end_block
-        )
-        wind_mw_post  = 0.0 if is_curtailment else wind_mw
-        solar_mw_post = 0.0 if is_curtailment else solar_mw_projected
+        # -- Segment-based curtailment ----------------------------------------
+        seg = _find_segment(block, active_segments)
+
+        if seg is None:
+            # Uncurtailed -- pass raw values through
+            wind_mw_post  = wind_mw_raw
+            solar_mw_post = solar_mw_raw
+            curtail_flag         = False
+            curtail_partial_flag = False
+            curtail_max_mw       = -1.0  # sentinel: no segment
+
+        elif seg['maxMw'] == 0.0:
+            # Full curtailment -- both plants zeroed
+            wind_mw_post  = 0.0
+            solar_mw_post = 0.0
+            curtail_flag         = True
+            curtail_partial_flag = False
+            curtail_max_mw       = 0.0
+
+        else:
+            # Partial curtailment -- combined MW cap across both plants
+            combined_raw = wind_mw_raw + solar_mw_raw
+            cap = float(seg['maxMw'])
+            if combined_raw > cap:
+                scale = cap / combined_raw
+                wind_mw_post  = wind_mw_raw  * scale
+                solar_mw_post = solar_mw_raw * scale
+            else:
+                # Under cap -- no curtailment needed
+                wind_mw_post  = wind_mw_raw
+                solar_mw_post = solar_mw_raw
+            curtail_flag         = False
+            curtail_partial_flag = True
+            curtail_max_mw       = cap
 
         results.append({
-            "block":          block,
-            "time":           time_str,
-            "wind_speed":     round(projected_speed, 2),
-            "wind_speed_2024": round(speed_2024, 2),
-            "wind_speed_2025": round(speed_2025, 2),
-            "wind_mw_raw":    round(wind_mw, 4),           # pre-curtailment
-            "wind_mw":        round(wind_mw_post, 4),      # post-curtailment
-            "solar_mw_raw":   round(solar_mw_projected, 4),
-            "solar_mw":       round(solar_mw_post, 4),
-            "curtail_flag":   is_curtailment,
+            "block":                block,
+            "time":                 time_str,
+            "wind_speed":           round(projected_speed, 2),
+            "wind_speed_2024":      round(speed_2024, 2),
+            "wind_speed_2025":      round(speed_2025, 2),
+            "wind_mw_raw":          round(wind_mw_raw,  4),   # pre-curtailment
+            "wind_mw":              round(wind_mw_post, 4),   # post-curtailment
+            "solar_mw_raw":         round(solar_mw_raw,  4),
+            "solar_mw":             round(solar_mw_post, 4),
+            "curtail_flag":         curtail_flag,           # True only for maxMw=0 segments
+            "curtail_partial_flag": curtail_partial_flag,   # True for maxMw>0 segments
+            "curtail_max_mw":       curtail_max_mw,         # -1=no seg, 0=full, >0=cap
         })
 
     return pd.DataFrame(results)

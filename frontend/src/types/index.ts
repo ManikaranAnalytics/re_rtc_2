@@ -1,3 +1,9 @@
+export interface CurtailmentSegment {
+  startBlock: number;
+  endBlock: number;
+  maxMw: number;
+}
+
 export interface BlockData {
   block: number;
   time: string;
@@ -74,7 +80,10 @@ export interface GenerationStats {
 export interface RTCRangeData {
   non_curtailment_blocks: number;
   curtailment_blocks: number;
-  curtailment_period_gen_lost_mwh: number;
+  partial_curtailment_blocks: number;
+  curtailment_period_gen_lost_mwh: number;  // backward compat: full + partial sum
+  curtailment_full_loss_mwh: number;
+  curtailment_partial_loss_mwh: number;
   generation_stats: GenerationStats;
   psp_discharge_headroom_mw: number;
   min_rtc_mw: number;

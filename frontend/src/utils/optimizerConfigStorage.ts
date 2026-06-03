@@ -8,6 +8,7 @@ import {
   PSP_SLIDER_MAX_DISCHARGE_MW,
   PSP_SLIDER_MAX_MIN_DISPATCH_MW,
 } from './constants';
+import type { CurtailmentSegment } from '../types';
 
 const STORAGE_KEY = 'hindalco-optimizer-config';
 
@@ -21,8 +22,10 @@ export interface PersistedOptimizerConfig {
   maxDischargeMw: number;
   minDispatchMw: number;
   curtailmentEnabled: boolean;
-  curtailmentStart: number;
-  curtailmentEnd: number;
+  // Segment-based curtailment (new). Legacy start/end kept for migration only.
+  curtailmentSegments: CurtailmentSegment[];
+  curtailmentStart: number;  // legacy — used only if curtailmentSegments absent in stored JSON
+  curtailmentEnd: number;    // legacy
   roundtripLoss: number;
   initialSocMwh: number;
   carryFromDate: string | null;
@@ -40,8 +43,9 @@ export const DEFAULT_OPTIMIZER_CONFIG: PersistedOptimizerConfig = {
   maxDischargeMw: PSP_DEFAULT_MAX_DISCHARGE_MW,
   minDispatchMw: PSP_DEFAULT_MIN_DISPATCH_MW,
   curtailmentEnabled: true,
-  curtailmentStart: 37,
-  curtailmentEnd: 64,
+  curtailmentSegments: [{ startBlock: 37, endBlock: 64, maxMw: 0 }],
+  curtailmentStart: 37,  // legacy fallback
+  curtailmentEnd: 64,    // legacy fallback
   roundtripLoss: 20,
   initialSocMwh: 0,
   carryFromDate: null,
@@ -90,6 +94,33 @@ function sanitize(raw: Record<string, unknown>): PersistedOptimizerConfig {
         ? null
         : d.carryFromDate;
 
+  // -- Segment migration -------------------------------------------------------
+  // If stored JSON has no curtailmentSegments but has the old start/end keys,
+  // auto-migrate to a single full-curtailment segment for backward compat.
+  let curtailmentSegments: CurtailmentSegment[];
+  if (Array.isArray(raw.curtailmentSegments) && raw.curtailmentSegments.length > 0) {
+    curtailmentSegments = (raw.curtailmentSegments as unknown[]).reduce<CurtailmentSegment[]>((acc, item) => {
+      if (
+        typeof item === 'object' && item !== null &&
+        typeof (item as Record<string, unknown>).startBlock === 'number' &&
+        typeof (item as Record<string, unknown>).endBlock   === 'number' &&
+        typeof (item as Record<string, unknown>).maxMw      === 'number'
+      ) {
+        const seg = item as Record<string, number>;
+        if (seg.endBlock > seg.startBlock && seg.maxMw >= 0) {
+          acc.push({ startBlock: seg.startBlock, endBlock: seg.endBlock, maxMw: seg.maxMw });
+        }
+      }
+      return acc;
+    }, []);
+    if (curtailmentSegments.length === 0) curtailmentSegments = d.curtailmentSegments;
+  } else {
+    // Migration: build from legacy start/end fields
+    const legacyStart = typeof raw.curtailmentStart === 'number' ? raw.curtailmentStart : d.curtailmentStart;
+    const legacyEnd   = typeof raw.curtailmentEnd   === 'number' ? raw.curtailmentEnd   : d.curtailmentEnd;
+    curtailmentSegments = [{ startBlock: legacyStart, endBlock: legacyEnd, maxMw: 0 }];
+  }
+
   return {
     selectedDate: date,
     wtgCount: clamp(typeof raw.wtgCount === 'number' ? raw.wtgCount : d.wtgCount, 1, 59),
@@ -100,8 +131,9 @@ function sanitize(raw: Record<string, unknown>): PersistedOptimizerConfig {
     maxDischargeMw: clamp(typeof raw.maxDischargeMw === 'number' ? raw.maxDischargeMw : d.maxDischargeMw, 0, PSP_SLIDER_MAX_DISCHARGE_MW),
     minDispatchMw: clamp(typeof raw.minDispatchMw === 'number' ? raw.minDispatchMw : d.minDispatchMw, 0, PSP_SLIDER_MAX_MIN_DISPATCH_MW),
     curtailmentEnabled: typeof raw.curtailmentEnabled === 'boolean' ? raw.curtailmentEnabled : d.curtailmentEnabled,
+    curtailmentSegments,
     curtailmentStart: clamp(typeof raw.curtailmentStart === 'number' ? raw.curtailmentStart : d.curtailmentStart, 1, 96),
-    curtailmentEnd: clamp(typeof raw.curtailmentEnd === 'number' ? raw.curtailmentEnd : d.curtailmentEnd, 1, 96),
+    curtailmentEnd:   clamp(typeof raw.curtailmentEnd   === 'number' ? raw.curtailmentEnd   : d.curtailmentEnd,   1, 96),
     roundtripLoss: clamp(typeof raw.roundtripLoss === 'number' ? raw.roundtripLoss : d.roundtripLoss, 10, 30),
     initialSocMwh: clamp(typeof raw.initialSocMwh === 'number' ? raw.initialSocMwh : d.initialSocMwh, 0, PSP_MAX_CAPACITY_MWH),
     carryFromDate,

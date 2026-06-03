@@ -80,7 +80,8 @@ def optimize_psp_dispatch(
         solar_mw = float(row['solar_mw'])
         curtail_flag = bool(row.get('curtail_flag', False))
 
-        # Combined RE generation (post-curtailment values already applied in forecast)
+        # generation_mw now reflects combined MW cap from curtailment segment (not hard zero)
+        # PSP discharge gap = max(0, min_schedule - generation_mw)
         generation_mw = wind_mw + solar_mw
 
         psp_charge = 0.0
@@ -357,29 +358,55 @@ def calculate_rtc_range(
     """
     discharge_loss_factor = 1.0 / (1.0 - roundtrip_loss_pct / 100.0)
 
-    non_curtail_df = forecast_df[~forecast_df['curtail_flag']].copy()
-    curtail_df     = forecast_df[forecast_df['curtail_flag']].copy()
+    # Split forecast into three groups based on curtailment type:
+    #   full_curtail_df  : curtail_flag == True  (maxMw=0) — excluded from RTC stats
+    #   partial_curtail_df: curtail_partial_flag == True (maxMw>0) — included in RTC stats
+    #   non_curtail_df   : neither — included normally
+    has_partial_col = 'curtail_partial_flag' in forecast_df.columns
 
-    if len(non_curtail_df) == 0:
+    full_curtail_df    = forecast_df[forecast_df['curtail_flag']].copy()
+    if has_partial_col:
+        partial_curtail_df = forecast_df[
+            ~forecast_df['curtail_flag'] & forecast_df['curtail_partial_flag']
+        ].copy()
+        non_curtail_df = forecast_df[
+            ~forecast_df['curtail_flag'] & ~forecast_df['curtail_partial_flag']
+        ].copy()
+    else:
+        partial_curtail_df = pd.DataFrame()
+        non_curtail_df     = forecast_df[~forecast_df['curtail_flag']].copy()
+
+    # RTC stats are computed over non-curtailed + partial-curtailed blocks.
+    # For partial blocks we use the CAPPED generation (wind_mw + solar_mw),
+    # not the raw values, because that is what will actually be dispatched.
+    # For non-curtailment blocks we use raw pre-curtailment values (as before).
+    if len(partial_curtail_df) > 0:
+        pc_gen = partial_curtail_df['wind_mw'] + partial_curtail_df['solar_mw']
+    else:
+        pc_gen = pd.Series(dtype=float)
+
+    nc_wind  = non_curtail_df['wind_mw_raw']  if 'wind_mw_raw'  in non_curtail_df.columns else non_curtail_df['wind_mw']
+    nc_solar = non_curtail_df['solar_mw_raw'] if 'solar_mw_raw' in non_curtail_df.columns else non_curtail_df['solar_mw']
+    nc_gen   = nc_wind + nc_solar
+
+    # Combine for stats
+    stat_gen = pd.concat([nc_gen, pc_gen], ignore_index=True)
+
+    if len(stat_gen) == 0:
         return {
             "error": "No non-curtailment blocks found in forecast.",
             "non_curtailment_blocks": 0
         }
 
-    # Use raw pre-curtailment wind/solar for non-curtailment blocks
-    nc_wind  = non_curtail_df['wind_mw_raw']  if 'wind_mw_raw'  in non_curtail_df.columns else non_curtail_df['wind_mw']
-    nc_solar = non_curtail_df['solar_mw_raw'] if 'solar_mw_raw' in non_curtail_df.columns else non_curtail_df['solar_mw']
-    nc_gen   = nc_wind + nc_solar
-
     # Generation statistics
-    gen_mean   = float(np.mean(nc_gen))
-    gen_median = float(np.median(nc_gen))
-    gen_p5     = float(np.percentile(nc_gen, 5))
-    gen_p10    = float(np.percentile(nc_gen, 10))
-    gen_p90    = float(np.percentile(nc_gen, 90))
-    gen_p95    = float(np.percentile(nc_gen, 95))
-    gen_min    = float(np.min(nc_gen))
-    gen_max    = float(np.max(nc_gen))
+    gen_mean   = float(np.mean(stat_gen))
+    gen_median = float(np.median(stat_gen))
+    gen_p5     = float(np.percentile(stat_gen, 5))
+    gen_p10    = float(np.percentile(stat_gen, 10))
+    gen_p90    = float(np.percentile(stat_gen, 90))
+    gen_p95    = float(np.percentile(stat_gen, 95))
+    gen_min    = float(np.min(stat_gen))
+    gen_max    = float(np.max(stat_gen))
 
     # PSP discharge headroom per block (MW) assuming full tank
     max_psp_per_block = min(max_discharge, max_soc / (0.25 * discharge_loss_factor))
@@ -390,7 +417,7 @@ def calculate_rtc_range(
     # Min RTC: 75% floor of P10 generation (regulatory-safe minimum)
     min_rtc = round(max(0.0, gen_p10 * min_compliance_ratio), 2)
 
-    # ── MANIKARAN'S SUGGESTION ────────────────────────────────────────────────
+    # -- MANIKARAN'S SUGGESTION -----------------------------------------------
     # The maximum RTC that results in zero shortfall across all 96 blocks,
     # using the actual initial SOC so the search reflects real dispatch conditions.
     recommended_rtc = find_max_rtc_no_shortfall(
@@ -406,22 +433,34 @@ def calculate_rtc_range(
         high=gen_p90 + max_psp_per_block,
     )
 
-    # Curtailment loss
-    if 'wind_mw_raw' in curtail_df.columns:
-        curtail_wind_raw  = curtail_df['wind_mw_raw']
+    # -- Curtailment loss reporting -------------------------------------------
+    # Full curtailment loss: raw generation that was zeroed
+    if len(full_curtail_df) > 0:
+        fc_wind  = full_curtail_df['wind_mw_raw']  if 'wind_mw_raw'  in full_curtail_df.columns else full_curtail_df.get('wind_mw',  pd.Series(dtype=float))
+        fc_solar = full_curtail_df['solar_mw_raw'] if 'solar_mw_raw' in full_curtail_df.columns else full_curtail_df.get('solar_mw', pd.Series(dtype=float))
+        full_loss_mwh = round(float((fc_wind + fc_solar).sum() * 0.25), 2)
     else:
-        curtail_wind_raw  = curtail_df.get('wind_mw', pd.Series(dtype=float))
-    if 'solar_mw_raw' in curtail_df.columns:
-        curtail_solar_raw = curtail_df['solar_mw_raw']
-    else:
-        curtail_solar_raw = curtail_df.get('solar_mw', pd.Series(dtype=float))
+        full_loss_mwh = 0.0
 
-    curtailment_loss_mwh = round(float((curtail_wind_raw + curtail_solar_raw).sum() * 0.25), 2)
+    # Partial curtailment loss: difference between raw combined and the cap
+    if len(partial_curtail_df) > 0 and has_partial_col:
+        pc_wind_raw  = partial_curtail_df['wind_mw_raw']  if 'wind_mw_raw'  in partial_curtail_df.columns else partial_curtail_df['wind_mw']
+        pc_solar_raw = partial_curtail_df['solar_mw_raw'] if 'solar_mw_raw' in partial_curtail_df.columns else partial_curtail_df['solar_mw']
+        pc_combined_raw = pc_wind_raw + pc_solar_raw
+        pc_capped       = partial_curtail_df['wind_mw'] + partial_curtail_df['solar_mw']
+        partial_loss_mwh = round(float(((pc_combined_raw - pc_capped).clip(lower=0)).sum() * 0.25), 2)
+    else:
+        partial_loss_mwh = 0.0
+
+    total_loss_mwh = round(full_loss_mwh + partial_loss_mwh, 2)
 
     return {
         "non_curtailment_blocks":            len(non_curtail_df),
-        "curtailment_blocks":                len(curtail_df),
-        "curtailment_period_gen_lost_mwh":   curtailment_loss_mwh,
+        "curtailment_blocks":                len(full_curtail_df),
+        "partial_curtailment_blocks":        len(partial_curtail_df),
+        "curtailment_period_gen_lost_mwh":   total_loss_mwh,     # backward compat
+        "curtailment_full_loss_mwh":         full_loss_mwh,
+        "curtailment_partial_loss_mwh":      partial_loss_mwh,
         "generation_stats": {
             "min_mw":    round(gen_min,    2),
             "p5_mw":     round(gen_p5,     2),

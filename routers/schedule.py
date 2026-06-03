@@ -50,6 +50,20 @@ def _psp_params(request) -> dict:
     }
 
 
+def _resolve_segments(request) -> list | None:
+    """Extract the curtailment segments list from any request schema.
+
+    If the request carries an explicit curtailment_segments array, return it as
+    plain dicts so forecast.py can iterate without Pydantic model overhead.
+    If not present, return None so forecast.py applies its own backward-compat
+    logic (building a single full-curtailment segment from start/end block fields).
+    """
+    segs = getattr(request, 'curtailment_segments', None)
+    if segs is None:
+        return None
+    return [s.model_dump() if hasattr(s, 'model_dump') else dict(s) for s in segs]
+
+
 @router.post("/schedule", response_model=ScheduleResponse)
 def get_optimal_schedule(request: ScheduleRequest):
     """
@@ -65,6 +79,7 @@ def get_optimal_schedule(request: ScheduleRequest):
             wtg_count=request.wtg_count,
             solar_ac_mw=request.solar_ac_mw,
             curtailment_enabled=request.curtailment_enabled,
+            curtailment_segments=_resolve_segments(request),
             curtailment_start_block=request.curtailment_start_block,
             curtailment_end_block=request.curtailment_end_block,
         )
@@ -97,6 +112,7 @@ def get_max_possible_rtc(request: MaxRTCRequest):
             wtg_count=request.wtg_count,
             solar_ac_mw=request.solar_ac_mw,
             curtailment_enabled=request.curtailment_enabled,
+            curtailment_segments=_resolve_segments(request),
             curtailment_start_block=request.curtailment_start_block,
             curtailment_end_block=request.curtailment_end_block,
         )
@@ -140,6 +156,7 @@ def get_rtc_range(request: RTCRangeRequest):
             wtg_count=request.wtg_count,
             solar_ac_mw=request.solar_ac_mw,
             curtailment_enabled=request.curtailment_enabled,
+            curtailment_segments=_resolve_segments(request),
             curtailment_start_block=request.curtailment_start_block,
             curtailment_end_block=request.curtailment_end_block,
         )
@@ -178,6 +195,7 @@ def get_multi_day_max_rtc(request: MultiDayMaxRTCRequest):
                 wtg_count=request.wtg_count,
                 solar_ac_mw=request.solar_ac_mw,
                 curtailment_enabled=request.curtailment_enabled,
+                curtailment_segments=_resolve_segments(request),
                 curtailment_start_block=request.curtailment_start_block,
                 curtailment_end_block=request.curtailment_end_block,
             )

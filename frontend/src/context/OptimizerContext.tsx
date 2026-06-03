@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ScheduleResponse, RTCRangeData, RawForecastRow, GenEdit, BlockData, SummaryData,
+  CurtailmentSegment,
 } from '../types';
 import { BASE_URL, JUNE_DATES } from '../utils/constants';
 import {
@@ -31,13 +32,14 @@ interface OptimizerContextValue {
   minDispatchMw: number;
   setMinDispatchMw: React.Dispatch<React.SetStateAction<number>>;
 
-  // Curtailment
+  // Curtailment — segment-based
   curtailmentEnabled: boolean;
   setCurtailmentEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  curtailmentSegments: CurtailmentSegment[];
+  setCurtailmentSegments: React.Dispatch<React.SetStateAction<CurtailmentSegment[]>>;
+  // Legacy kept for backward compat (generation table curtail_flag overlay)
   curtailmentStart: number;
-  setCurtailmentStart: React.Dispatch<React.SetStateAction<number>>;
   curtailmentEnd: number;
-  setCurtailmentEnd: React.Dispatch<React.SetStateAction<number>>;
 
   // PSP
   roundtripLoss: number;
@@ -115,8 +117,10 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
 
   // Curtailment config
   const [curtailmentEnabled, setCurtailmentEnabled] = useState(savedConfig.curtailmentEnabled);
-  const [curtailmentStart, setCurtailmentStart] = useState(savedConfig.curtailmentStart);
-  const [curtailmentEnd, setCurtailmentEnd] = useState(savedConfig.curtailmentEnd);
+  const [curtailmentSegments, setCurtailmentSegments] = useState<CurtailmentSegment[]>(savedConfig.curtailmentSegments);
+  // Legacy: kept so rawForecast overlay still works (derived from first segment)
+  const curtailmentStart = curtailmentSegments.length > 0 ? curtailmentSegments[0].startBlock : 37;
+  const curtailmentEnd   = curtailmentSegments.length > 0 ? curtailmentSegments[0].endBlock   : 64;
 
   // PSP loss %
   const [roundtripLoss, setRoundtripLoss] = useState(savedConfig.roundtripLoss);
@@ -157,6 +161,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
       maxDischargeMw,
       minDispatchMw,
       curtailmentEnabled,
+      curtailmentSegments,
       curtailmentStart,
       curtailmentEnd,
       roundtripLoss,
@@ -170,7 +175,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   }, [
     selectedDate, wtgCount, solarAc, rtcCommitment,
     maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw,
-    curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss,
+    curtailmentEnabled, curtailmentSegments, roundtripLoss,
     initialSocMwh, carryFromDate, prevDayChargeSchedule, blockOverrides,
   ]);
 
@@ -248,8 +253,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             solar_ac_mw: solarAc,
             rtc_commitment_mw: rtcCommitment,
             curtailment_enabled: curtailmentEnabled,
-            curtailment_start_block: curtailmentStart,
-            curtailment_end_block: curtailmentEnd,
+            curtailment_segments: curtailmentSegments,
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
@@ -296,7 +300,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
 
     const handler = setTimeout(() => { fetchSchedule(); }, 150);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
 
   // ── Roll to next day ──
   const handleRollToNextDay = useCallback(() => {
@@ -331,8 +335,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             wtg_count: wtgCount,
             solar_ac_mw: solarAc,
             curtailment_enabled: curtailmentEnabled,
-            curtailment_start_block: curtailmentStart,
-            curtailment_end_block: curtailmentEnd,
+            curtailment_segments: curtailmentSegments,
             roundtrip_loss_pct: roundtripLoss,
             min_compliance_ratio: 0.75,
             max_soc_mwh: maxSocMwh,
@@ -355,7 +358,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     };
     const handler = setTimeout(fetchRange, 300);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, buildOverridesList]);
 
   // ── Fetch raw forecast ──
   useEffect(() => {
@@ -368,10 +371,14 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch(`${BASE_URL}/api/generation/${selectedDate}?${params.toString()}`);
         if (response.ok) {
           const data: RawForecastRow[] = await response.json();
-          const withCurtail = data.map(row => ({
-            ...row,
-            curtail_flag: curtailmentEnabled && row.block >= curtailmentStart && row.block <= curtailmentEnd,
-          }));
+          // Apply curtail_flag overlay using segments (first matching segment wins)
+          const withCurtail = data.map(row => {
+            if (!curtailmentEnabled) return { ...row, curtail_flag: false };
+            const seg = curtailmentSegments.find(
+              s => s.startBlock <= row.block && row.block <= s.endBlock
+            );
+            return { ...row, curtail_flag: seg !== undefined && seg.maxMw === 0 };
+          });
           setRawForecast(withCurtail);
           setGenTableEdits({});
         }
@@ -381,7 +388,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     };
     const handler = setTimeout(fetchRaw, 200);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentStart, curtailmentEnd]);
+  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentSegments]);
 
   // ── Derived ──
   const blocks = scheduleData?.blocks || [];
@@ -397,8 +404,9 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     maxDischargeMw, setMaxDischargeMw,
     minDispatchMw, setMinDispatchMw,
     curtailmentEnabled, setCurtailmentEnabled,
-    curtailmentStart, setCurtailmentStart,
-    curtailmentEnd, setCurtailmentEnd,
+    curtailmentSegments, setCurtailmentSegments,
+    curtailmentStart,
+    curtailmentEnd,
     roundtripLoss, setRoundtripLoss,
     sideTab, setSideTab,
     blockOverrides, setBlockOverrides,

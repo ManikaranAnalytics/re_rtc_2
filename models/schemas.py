@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 
 from services.constants import (
@@ -17,6 +17,26 @@ _PSP_MAX = PSP_MAX_CAPACITY_MWH
 _PSP_MIN = PSP_MIN_CAPACITY_MWH
 _PSP_DEFAULT = PSP_DEFAULT_CAPACITY_MWH
 
+# ── Curtailment Segment ─────────────────────────────────────────────────────
+
+class CurtailmentSegment(BaseModel):
+    """A single curtailment window with an optional MW cap.
+
+    maxMw == 0  → full curtailment (both wind and solar forced to 0).
+    maxMw  > 0  → combined cap: wind_mw + solar_mw scaled so their sum <= maxMw.
+    Blocks not covered by any segment are passed through uncurtailed.
+    """
+    startBlock: int = Field(..., ge=1, le=96, description="First curtailed block (inclusive)")
+    endBlock:   int = Field(..., ge=1, le=96, description="Last curtailed block (inclusive)")
+    maxMw:      float = Field(0.0, ge=0.0, description="Combined MW cap (0 = full curtailment)")
+
+    @model_validator(mode='after')
+    def end_after_start(self) -> 'CurtailmentSegment':
+        if self.endBlock <= self.startBlock:
+            raise ValueError(f"endBlock ({self.endBlock}) must be > startBlock ({self.startBlock})")
+        return self
+
+
 # ── Request / Config Schemas ──────────────────────────────────────────────────
 
 class ScheduleRequest(BaseModel):
@@ -24,10 +44,18 @@ class ScheduleRequest(BaseModel):
     wtg_count: int = Field(10, ge=1, le=59, description="Number of Wind Turbine Generators")
     solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0, description="Solar AC capacity in MW")
     rtc_commitment_mw: float = Field(50.0, ge=1.0, le=300.0, description="Daily RTC commitment target in MW")
-    # Curtailment config
-    curtailment_enabled: bool = Field(True, description="Whether curtailment window is active")
-    curtailment_start_block: int = Field(37, ge=1, le=96, description="First curtailed block (inclusive)")
-    curtailment_end_block: int = Field(64, ge=1, le=96, description="Last curtailed block (inclusive)")
+    # Curtailment config — new segment-based system
+    # Provide curtailment_segments to use the full MW-cap system.
+    # If omitted, the legacy curtailment_start_block / curtailment_end_block fields
+    # are used to auto-build a single full-curtailment segment (backward compat).
+    curtailment_segments: Optional[List[CurtailmentSegment]] = Field(
+        None, description="Segment-based curtailment windows with per-segment MW caps. "
+                          "When provided, overrides curtailment_start/end_block."
+    )
+    # Legacy fields kept for backward compatibility
+    curtailment_enabled: bool = Field(True, description="Whether curtailment window is active (legacy; ignored when curtailment_segments is set)")
+    curtailment_start_block: int = Field(37, ge=1, le=96, description="First curtailed block — legacy, used only when curtailment_segments is absent")
+    curtailment_end_block: int = Field(64, ge=1, le=96, description="Last curtailed block — legacy, used only when curtailment_segments is absent")
     # PSP config
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0, description="PSP round-trip loss % (e.g. 20 = 20% loss)")
     min_compliance_ratio: float = Field(0.75, ge=0.5, le=1.0, description="Min delivery as fraction of RTC (0.75 = 75%)")
@@ -107,6 +135,7 @@ class MaxRTCRequest(BaseModel):
     date: str = Field(..., description="Date in YYYY-MM-DD format (June 2026)", examples=["2026-06-01"])
     wtg_count: int = Field(10, ge=1, le=59)
     solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0)
+    curtailment_segments: Optional[List[CurtailmentSegment]] = Field(None)
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)
@@ -147,6 +176,7 @@ class RTCRangeRequest(BaseModel):
     date: str = Field(..., examples=["2026-06-01"])
     wtg_count: int = Field(10, ge=1, le=59)
     solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0)
+    curtailment_segments: Optional[List[CurtailmentSegment]] = Field(None)
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)
@@ -164,7 +194,10 @@ class RTCRangeRequest(BaseModel):
 class RTCRangeResponse(BaseModel):
     non_curtailment_blocks: int
     curtailment_blocks: int
-    curtailment_period_gen_lost_mwh: float
+    partial_curtailment_blocks: int = Field(0, description="Blocks covered by a maxMw>0 segment (included in RTC stats)")
+    curtailment_period_gen_lost_mwh: float        # backward-compat: full + partial loss sum
+    curtailment_full_loss_mwh: float = Field(0.0, description="Generation lost in full-curtailment blocks (MWh)")
+    curtailment_partial_loss_mwh: float = Field(0.0, description="Generation lost to MW cap in partial-curtailment blocks (MWh)")
     generation_stats: GenerationStats
     psp_discharge_headroom_mw: float
     min_rtc_mw: float
@@ -179,6 +212,7 @@ class MultiDayMaxRTCRequest(BaseModel):
     dates: List[str] = Field(..., description="Ordered list of dates in YYYY-MM-DD format")
     wtg_count: int = Field(10, ge=1, le=59)
     solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0)
+    curtailment_segments: Optional[List[CurtailmentSegment]] = Field(None)
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)

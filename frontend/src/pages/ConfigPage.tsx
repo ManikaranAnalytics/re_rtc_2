@@ -1,12 +1,309 @@
-import React from 'react';
-import { Settings2, Table2 } from 'lucide-react';
+import React, { useMemo } from 'react';
+import { Settings2, Table2, Plus, Trash2 } from 'lucide-react';
 import { useOptimizer } from '../context/OptimizerContext';
+import type { CurtailmentSegment } from '../types';
 import {
   PSP_MAX_CAPACITY_MWH,
   PSP_SLIDER_MAX_CHARGE_MW,
   PSP_SLIDER_MAX_DISCHARGE_MW,
   PSP_SLIDER_MAX_MIN_DISPATCH_MW,
 } from '../utils/constants';
+
+/* ── helpers ── */
+
+function blockToTime(block: number): string {
+  const totalMin = (block - 1) * 15;
+  const hh = Math.floor(totalMin / 60).toString().padStart(2, '0');
+  const mm = (totalMin % 60).toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function segmentColor(maxMw: number): string {
+  if (maxMw === 0) return '#dc2626';   // full curtail — dark red
+  return '#d97706';                     // partial curtail — amber
+}
+
+function detectOverlaps(segments: CurtailmentSegment[]): Set<number> {
+  const overlapping = new Set<number>();
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 1; j < segments.length; j++) {
+      if (segments[i].startBlock <= segments[j].endBlock &&
+          segments[j].startBlock <= segments[i].endBlock) {
+        overlapping.add(i);
+        overlapping.add(j);
+      }
+    }
+  }
+  return overlapping;
+}
+
+function validateSegments(segments: CurtailmentSegment[]): string[] {
+  const errors: string[] = [];
+  const overlaps = detectOverlaps(segments);
+  if (overlaps.size > 0) errors.push('Segments overlap — fix highlighted rows before saving.');
+  segments.forEach((s, i) => {
+    if (s.endBlock <= s.startBlock) errors.push(`Segment ${i + 1}: End Block must be > Start Block.`);
+    if (s.maxMw < 0) errors.push(`Segment ${i + 1}: Max MW must be ≥ 0.`);
+  });
+  return errors;
+}
+
+/* ── Curtailment Timeline Bar ── */
+
+function CurtailmentTimeline({ segments }: { segments: CurtailmentSegment[] }) {
+  const [hovered, setHovered] = React.useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
+
+  const blockColors = useMemo(() => {
+    const colors: Record<number, string> = {};
+    for (let b = 1; b <= 96; b++) {
+      const seg = segments.find(s => s.startBlock <= b && b <= s.endBlock);
+      if (!seg) colors[b] = '#166534';           // green — uncurtailed
+      else colors[b] = segmentColor(seg.maxMw);
+    }
+    return colors;
+  }, [segments]);
+
+  const hoveredSeg = hovered !== null
+    ? segments.find(s => s.startBlock <= hovered && hovered <= s.endBlock)
+    : null;
+
+  return (
+    <div style={{ position: 'relative', userSelect: 'none' }}>
+      {/* Block strip */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(96, 1fr)',
+          height: '40px',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          border: '1px solid rgba(255,255,255,0.1)',
+          cursor: 'crosshair',
+        }}
+      >
+        {Array.from({ length: 96 }, (_, i) => i + 1).map(b => (
+          <div
+            key={b}
+            onMouseEnter={e => { setHovered(b); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+            onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+            onMouseLeave={() => setHovered(null)}
+            style={{
+              background: blockColors[b],
+              opacity: hovered === b ? 0.75 : 1,
+              transition: 'opacity 0.1s',
+            }}
+          />
+        ))}
+      </div>
+
+      {/* Time labels */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
+        {['00:00', '06:00', '12:00', '18:00', '24:00'].map(t => (
+          <span key={t}>{t}</span>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#dc2626', display: 'inline-block' }} />
+          Full curtailment (MW = 0)
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#d97706', display: 'inline-block' }} />
+          Partial cap (MW &gt; 0)
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#166534', display: 'inline-block' }} />
+          Uncurtailed
+        </span>
+      </div>
+
+      {/* Tooltip */}
+      {hovered !== null && (
+        <div style={{
+          position: 'fixed',
+          left: tooltipPos.x + 12,
+          top: tooltipPos.y - 36,
+          background: 'rgba(15,23,42,0.95)',
+          border: '1px solid rgba(255,255,255,0.15)',
+          borderRadius: '6px',
+          padding: '6px 10px',
+          fontSize: '12px',
+          color: '#e2e8f0',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          whiteSpace: 'nowrap',
+        }}>
+          <strong>Block {hovered}</strong> — {blockToTime(hovered)}&nbsp;|&nbsp;
+          {hoveredSeg
+            ? hoveredSeg.maxMw === 0
+              ? <span style={{ color: '#f87171' }}>Full curtailment</span>
+              : <span style={{ color: '#fbbf24' }}>MW cap: {hoveredSeg.maxMw}</span>
+            : <span style={{ color: '#4ade80' }}>Uncurtailed</span>
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Segment Editor Table ── */
+
+interface SegmentEditorProps {
+  segments: CurtailmentSegment[];
+  onChange: (segs: CurtailmentSegment[]) => void;
+  overlappingIndices: Set<number>;
+}
+
+function SegmentEditor({ segments, onChange, overlappingIndices }: SegmentEditorProps) {
+  const update = (i: number, patch: Partial<CurtailmentSegment>) => {
+    const next = segments.map((s, idx) => idx === i ? { ...s, ...patch } : s);
+    onChange(next);
+  };
+  const remove = (i: number) => onChange(segments.filter((_, idx) => idx !== i));
+  const add = () => onChange([...segments, { startBlock: 1, endBlock: 2, maxMw: 0 }]);
+
+  const inputStyle = (invalid: boolean): React.CSSProperties => ({
+    width: '100%',
+    background: '#0a1020',
+    border: `1px solid ${invalid ? 'rgba(239,68,68,0.6)' : 'rgba(251,191,36,0.25)'}`,
+    borderRadius: '6px',
+    color: invalid ? '#f87171' : '#fbbf24',
+    padding: '7px 8px',
+    fontSize: '13px',
+    fontFamily: 'var(--font-mono)',
+    textAlign: 'center',
+  });
+
+  return (
+    <div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              {['Start Block', 'End Block', 'Time Range', 'Max MW (0 = full)', ''].map(h => (
+                <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {segments.map((seg, i) => {
+              const isOverlap = overlappingIndices.has(i);
+              const endInvalid = seg.endBlock <= seg.startBlock;
+              const mwInvalid = seg.maxMw < 0;
+              return (
+                <tr key={i} style={{
+                  background: isOverlap ? 'rgba(239,68,68,0.07)' : 'transparent',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  transition: 'background 0.2s',
+                }}>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input
+                      type="number" min={1} max={96}
+                      value={seg.startBlock}
+                      onChange={e => update(i, { startBlock: parseInt(e.target.value) || 1 })}
+                      style={inputStyle(isOverlap || endInvalid)}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input
+                      type="number" min={1} max={96}
+                      value={seg.endBlock}
+                      onChange={e => update(i, { endBlock: parseInt(e.target.value) || 2 })}
+                      style={inputStyle(isOverlap || endInvalid)}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 10px', color: '#94a3b8', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                    {blockToTime(seg.startBlock)} – {blockToTime(seg.endBlock)}
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input
+                      type="number" min={0} step={0.5}
+                      value={seg.maxMw}
+                      onChange={e => update(i, { maxMw: parseFloat(e.target.value) || 0 })}
+                      style={{
+                        ...inputStyle(mwInvalid),
+                        color: seg.maxMw === 0 ? '#f87171' : '#fbbf24',
+                      }}
+                    />
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <button
+                      onClick={() => remove(i)}
+                      title="Remove segment"
+                      style={{
+                        background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
+                        borderRadius: '6px', color: '#f87171', padding: '5px 8px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <button
+        onClick={add}
+        style={{
+          marginTop: '10px',
+          display: 'flex', alignItems: 'center', gap: '6px',
+          background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.3)',
+          borderRadius: '8px', color: '#fbbf24', fontSize: '13px', padding: '7px 14px',
+          cursor: 'pointer', fontWeight: 600, transition: 'background 0.15s',
+        }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(251,191,36,0.16)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(251,191,36,0.08)')}
+      >
+        <Plus size={14} /> Add Segment
+      </button>
+      <div style={{ marginTop: '8px', fontSize: '11px', color: '#475569' }}>
+        Uncovered blocks treated as no curtailment
+      </div>
+    </div>
+  );
+}
+
+/* ── Summary Stat Cards ── */
+
+function CurtailmentStats({ segments }: { segments: CurtailmentSegment[] }) {
+  const fullBlocks = segments
+    .filter(s => s.maxMw === 0)
+    .reduce((acc, s) => acc + (s.endBlock - s.startBlock + 1), 0);
+  const partialBlocks = segments
+    .filter(s => s.maxMw > 0)
+    .reduce((acc, s) => acc + (s.endBlock - s.startBlock + 1), 0);
+  // Rough estimate: full curtailment loss ~assumes average 10MW generation
+  const estimatedLoss = (fullBlocks * 10 * 0.25).toFixed(0);
+
+  const cards = [
+    { label: 'Fully Curtailed Blocks', value: fullBlocks.toString(), color: '#f87171', bg: 'rgba(239,68,68,0.08)' },
+    { label: 'Est. Generation Lost', value: `~${estimatedLoss} MWh`, color: '#fb923c', bg: 'rgba(251,146,60,0.08)', sub: 'full curtailment only' },
+    { label: 'Partial Curtailment Blocks', value: partialBlocks.toString(), color: '#fbbf24', bg: 'rgba(251,191,36,0.08)' },
+  ];
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
+      {cards.map(c => (
+        <div key={c.label} style={{
+          background: c.bg, border: `1px solid ${c.color}30`,
+          borderRadius: '10px', padding: '12px 14px',
+        }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: c.color, fontFamily: 'var(--font-mono)' }}>{c.value}</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{c.label}</div>
+          {c.sub && <div style={{ fontSize: '10px', color: '#475569', marginTop: '2px' }}>{c.sub}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── ConfigPage ── */
 
 export default function ConfigPage() {
   const {
@@ -15,8 +312,7 @@ export default function ConfigPage() {
     maxDischargeMw, setMaxDischargeMw,
     minDispatchMw, setMinDispatchMw,
     curtailmentEnabled, setCurtailmentEnabled,
-    curtailmentStart, setCurtailmentStart,
-    curtailmentEnd, setCurtailmentEnd,
+    curtailmentSegments, setCurtailmentSegments,
     roundtripLoss, setRoundtripLoss,
     sideTab, setSideTab,
     blockOverrides, setBlockOverrides,
@@ -24,6 +320,10 @@ export default function ConfigPage() {
     carryFromDate, initialSocMwh,
     handleClearCarry,
   } = useOptimizer();
+
+  const errors = useMemo(() => validateSegments(curtailmentSegments), [curtailmentSegments]);
+  const overlappingIndices = useMemo(() => detectOverlaps(curtailmentSegments), [curtailmentSegments]);
+  const hasErrors = errors.length > 0;
 
   return (
     <div className="config-page">
@@ -41,32 +341,58 @@ export default function ConfigPage() {
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Settings2 size={16} style={{ color: '#a5b4fc' }} />
-            Plant & Storage Parameters
+            Plant &amp; Storage Parameters
           </h3>
 
-          {/* Curtailment Config */}
+          {/* ─── Curtailment Segment Config ─── */}
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '10px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ fontWeight: '700', color: '#fbbf24', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚡ Curtailment Window</span>
-              <button onClick={() => setCurtailmentEnabled(p => !p)} style={{ background: curtailmentEnabled ? 'rgba(251,191,36,0.2)' : 'rgba(100,116,139,0.15)', border: `1px solid ${curtailmentEnabled ? 'rgba(251,191,36,0.5)' : 'rgba(100,116,139,0.3)'}`, borderRadius: '20px', color: curtailmentEnabled ? '#fbbf24' : '#64748b', fontSize: '11px', padding: '4px 12px', cursor: 'pointer', fontWeight: '700' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <span style={{ fontWeight: '700', color: '#fbbf24', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚡ Curtailment Segments</span>
+              <button
+                onClick={() => setCurtailmentEnabled(p => !p)}
+                style={{
+                  background: curtailmentEnabled ? 'rgba(251,191,36,0.2)' : 'rgba(100,116,139,0.15)',
+                  border: `1px solid ${curtailmentEnabled ? 'rgba(251,191,36,0.5)' : 'rgba(100,116,139,0.3)'}`,
+                  borderRadius: '20px', color: curtailmentEnabled ? '#fbbf24' : '#64748b',
+                  fontSize: '11px', padding: '4px 12px', cursor: 'pointer', fontWeight: '700',
+                }}
+              >
                 {curtailmentEnabled ? 'ACTIVE' : 'DISABLED'}
               </button>
             </div>
-            {curtailmentEnabled && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>From Block</div>
-                  <input type="number" min={1} max={96} value={curtailmentStart} onChange={e => setCurtailmentStart(parseInt(e.target.value))} style={{ width: '100%', background: '#0a1020', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '8px', color: '#fbbf24', padding: '10px 12px', fontSize: '16px', fontWeight: '700', textAlign: 'center' }} />
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>≈ {((curtailmentStart - 1) * 15 / 60).toFixed(1).replace('.0', ':00').replace('.5', ':30')}h IST</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '6px' }}>To Block</div>
-                  <input type="number" min={1} max={96} value={curtailmentEnd} onChange={e => setCurtailmentEnd(parseInt(e.target.value))} style={{ width: '100%', background: '#0a1020', border: '1px solid rgba(251,191,36,0.3)', borderRadius: '8px', color: '#fbbf24', padding: '10px 12px', fontSize: '16px', fontWeight: '700', textAlign: 'center' }} />
-                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px', textAlign: 'center' }}>≈ {Math.floor(curtailmentEnd * 15 / 60).toString().padStart(2, '0')}:{((curtailmentEnd * 15 % 60) === 0 ? '00' : '30')}h IST</div>
-                </div>
+
+            {curtailmentEnabled ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {/* Validation errors */}
+                {hasErrors && (
+                  <div style={{
+                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)',
+                    borderRadius: '8px', padding: '10px 12px', fontSize: '12px',
+                  }}>
+                    {errors.map((e, i) => (
+                      <div key={i} style={{ color: '#f87171', marginBottom: i < errors.length - 1 ? '4px' : 0 }}>⚠ {e}</div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Visual timeline */}
+                <CurtailmentTimeline segments={curtailmentSegments} />
+
+                {/* Segment table editor */}
+                <SegmentEditor
+                  segments={curtailmentSegments}
+                  onChange={segs => setCurtailmentSegments(segs)}
+                  overlappingIndices={overlappingIndices}
+                />
+
+                {/* Summary stats */}
+                <CurtailmentStats segments={curtailmentSegments} />
+              </div>
+            ) : (
+              <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '8px 0' }}>
+                No curtailment — full generation all 96 blocks
               </div>
             )}
-            {!curtailmentEnabled && <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '8px 0' }}>No curtailment — full generation all 96 blocks</div>}
           </div>
 
           {/* PSP Round-Trip Loss */}
@@ -161,7 +487,13 @@ export default function ConfigPage() {
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px dashed var(--border-color)', borderRadius: '10px', padding: '16px', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
             <span style={{ fontWeight: '600', color: 'var(--text-primary)', display: 'block', marginBottom: '6px', fontSize: '14px' }}>Regulatory Constraints:</span>
             <ul style={{ paddingLeft: '18px', margin: 0 }}>
-              <li style={{ marginBottom: '6px' }}>Curtailment: {curtailmentEnabled ? `Blocks ${curtailmentStart}–${curtailmentEnd}` : 'Disabled this season'}.</li>
+              <li style={{ marginBottom: '6px' }}>
+                Curtailment: {curtailmentEnabled
+                  ? curtailmentSegments.length === 0
+                    ? 'Enabled (no segments defined)'
+                    : `${curtailmentSegments.length} segment(s) active`
+                  : 'Disabled this season'}.
+              </li>
               <li style={{ marginBottom: '6px' }}>Orvakallu PSP storage capacity configurable up to {PSP_MAX_CAPACITY_MWH} MWh.</li>
               <li style={{ marginBottom: '6px' }}>PSP rates: charge ≤ {maxChargeMw} MW, discharge ≤ {maxDischargeMw} MW, min dispatch {minDispatchMw} MW.</li>
               <li>Min delivery floor: 75% of RTC commitment.</li>
