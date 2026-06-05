@@ -11,7 +11,7 @@ def optimize_psp_dispatch(
     max_discharge: float = 50.0,
     roundtrip_loss_pct: float = 20.0,   # % loss on round-trip (e.g. 20 means 20% loss)
     max_cycles: float = 2.0,
-    min_compliance_ratio: float = 0.75,  # 75% of RTC is the regulatory floor
+    min_compliance_ratio: float = 0.50,  # 50% of RTC is the regulatory floor
     min_dispatch_mw: float = 6.0,        # Minimum PSP charge/discharge (MW) — CERC compliance
     prev_day_charge_schedule: list = None,  # kept for API compatibility; no longer used
 ) -> dict:
@@ -46,7 +46,7 @@ def optimize_psp_dispatch(
       - max_discharge     : Max discharge rate in MW
       - roundtrip_loss_pct: Total round-trip loss percentage (10–20 typical)
       - max_cycles        : Max allowable charge cycles per day
-      - min_compliance_ratio: Fraction of RTC that is the delivery floor (0.75 = 75%)
+      - min_compliance_ratio: Fraction of RTC that is the delivery floor (0.50 = 50%)
 
     Returns:
       dict with 'blocks' (list of per-block dicts), 'summary' (daily KPIs), and 'carry_forward' info
@@ -213,7 +213,7 @@ def optimize_psp_dispatch(
 def find_max_rtc_no_shortfall(
     forecast_df: pd.DataFrame,
     roundtrip_loss_pct: float = 20.0,
-    min_compliance_ratio: float = 0.75,
+    min_compliance_ratio: float = 0.50,
     low: float = 0.0,
     high: float = 300.0,
     tolerance: float = 0.05,
@@ -271,7 +271,7 @@ def find_max_rtc_no_shortfall(
 def find_max_rtc_multiday(
     forecast_dfs: list,
     roundtrip_loss_pct: float = 20.0,
-    min_compliance_ratio: float = 0.75,
+    min_compliance_ratio: float = 0.50,
     min_dispatch_mw: float = 6.0,
     max_soc: float = 360.0,
     max_charge: float = 60.0,
@@ -340,7 +340,7 @@ def calculate_rtc_range(
     max_charge: float = 60.0,
     max_discharge: float = 50.0,
     roundtrip_loss_pct: float = 20.0,
-    min_compliance_ratio: float = 0.75,
+    min_compliance_ratio: float = 0.50,
     min_dispatch_mw: float = 6.0,
     initial_soc: float = 0.0,
 ) -> dict:
@@ -354,7 +354,7 @@ def calculate_rtc_range(
         It is NOT the statistical mean — it's the real dispatch-validated safe maximum.
 
     Max RTC = P90 non-curtailment generation (higher risk, needs PSP backup for P10 blocks)
-    Min RTC = 75% of P10 non-curtailment generation (regulatory safe floor)
+    Min RTC = 50% of P10 non-curtailment generation (regulatory safe floor)
     """
     discharge_loss_factor = 1.0 / (1.0 - roundtrip_loss_pct / 100.0)
 
@@ -414,7 +414,7 @@ def calculate_rtc_range(
     # Max RTC: P90 generation (you can hit this 90% of the time; PSP covers the rest)
     max_rtc = round(gen_p90, 2)
 
-    # Min RTC: 75% floor of P10 generation (regulatory-safe minimum)
+    # Min RTC: 50% floor of P10 generation (regulatory-safe minimum)
     min_rtc = round(max(0.0, gen_p10 * min_compliance_ratio), 2)
 
     # -- MANIKARAN'S SUGGESTION -----------------------------------------------

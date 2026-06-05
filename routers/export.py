@@ -27,7 +27,7 @@ def export_excel(
     curtailment_start_block: int = Query(37, ge=1, le=96),
     curtailment_end_block: int = Query(64, ge=1, le=96),
     roundtrip_loss_pct: float = Query(20.0, ge=0.0, le=50.0),
-    min_compliance_ratio: float = Query(0.75, ge=0.5, le=1.0),
+    min_compliance_ratio: float = Query(0.50, ge=0.5, le=1.0),
     initial_soc_mwh: float = Query(0.0, ge=0.0, le=PSP_MAX_CAPACITY_MWH),
     max_soc_mwh: float = Query(PSP_DEFAULT_CAPACITY_MWH, ge=PSP_MIN_CAPACITY_MWH, le=PSP_MAX_CAPACITY_MWH),
     max_charge_mw: float = Query(PSP_DEFAULT_MAX_CHARGE_MW, ge=0.0, le=PSP_MAX_CHARGE_MW),

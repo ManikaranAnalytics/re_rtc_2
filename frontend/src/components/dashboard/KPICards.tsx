@@ -16,7 +16,7 @@ export default function KPICards() {
           <span>{summary.rtc_commitment_mw.toFixed(1)}</span>
           <span className="kpi-unit">MW</span>
         </div>
-        <span className="kpi-subtitle">Compliance threshold: {(summary.rtc_commitment_mw * 0.75).toFixed(1)} MW (75%)</span>
+        <span className="kpi-subtitle">Compliance threshold: {(summary.rtc_commitment_mw * 0.50).toFixed(1)} MW (50%)</span>
       </div>
 
       <div className="glass-panel kpi-card" style={{ '--accent-color': 'var(--color-target)' } as React.CSSProperties}>

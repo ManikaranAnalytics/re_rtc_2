@@ -111,7 +111,7 @@ export default function ConfigPanel() {
                     <div>
                       <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Min Safe Commit</div>
                       <div style={{ fontSize: '20px', fontWeight: '800', color: '#f87171', fontFamily: 'monospace' }}>{rtcRange.min_rtc_mw.toFixed(1)} <span style={{ fontSize: '12px', fontWeight: '400' }}>MW</span></div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>75% of P10 non-curtail gen</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>50% of P10 non-curtail gen</div>
                     </div>
                     <button onClick={() => setRtcCommitment(rtcRange.min_rtc_mw)} style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#f87171', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>Use Min</button>
                   </div>

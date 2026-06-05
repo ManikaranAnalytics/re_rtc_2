@@ -89,7 +89,7 @@ export default function MultiDayAnalysis() {
             curtailment_enabled: curtailmentEnabled,
             curtailment_segments: curtailmentSegments,
             roundtrip_loss_pct: roundtripLoss,
-            min_compliance_ratio: 0.75,
+            min_compliance_ratio: 0.50,
             max_soc_mwh: maxSocMwh,
             max_charge_mw: maxChargeMw,
             max_discharge_mw: maxDischargeMw,
@@ -125,7 +125,7 @@ export default function MultiDayAnalysis() {
               curtailment_enabled: curtailmentEnabled,
               curtailment_segments: curtailmentSegments,
               roundtrip_loss_pct: roundtripLoss,
-              min_compliance_ratio: 0.75,
+              min_compliance_ratio: 0.50,
               max_soc_mwh: maxSocMwh,
               max_charge_mw: maxChargeMw,
               max_discharge_mw: maxDischargeMw,
@@ -190,7 +190,7 @@ export default function MultiDayAnalysis() {
   }));
 
   // ── 50% block-count threshold ──
-  // A day passes if at least 50% of its blocks (>= 48/96) are compliant at the 75% RTC floor.
+  // A day passes if at least 50% of its blocks (>= 48/96) are compliant at the 50% RTC floor.
   // This is a looser DAY-PASS condition than "fully compliant" (which requires 96/96 blocks).
   // It answers: "on how many days did we at least deliver half the day correctly?"
   const compliantDays50Pct = results.filter(r =>
@@ -538,10 +538,10 @@ export default function MultiDayAnalysis() {
           <div className="multiday-kpi-grid">
             {[
               { label: 'Period', value: periodLabel, unit: '', color: '#818cf8', mono: false, sub: null },
-              { label: 'Overall Compliance', value: ((compliantBlocks / totalBlocks) * 100).toFixed(1), unit: '%', color: compliantBlocks === totalBlocks ? '#34d399' : '#f59e0b', mono: true, sub: '75% RTC floor · all 96 blocks' },
+              { label: 'Overall Compliance', value: ((compliantBlocks / totalBlocks) * 100).toFixed(1), unit: '%', color: compliantBlocks === totalBlocks ? '#34d399' : '#f59e0b', mono: true, sub: '50% RTC floor · all 96 blocks' },
               { label: 'Compliant Blocks', value: compliantBlocks, unit: ` / ${totalBlocks}`, color: '#34d399', mono: true, sub: null },
-              { label: 'Fully Compliant Days (75%)', value: results.filter(r => r.schedule.summary.fully_compliant).length, unit: ` / ${results.length}`, color: '#10b981', mono: true, sub: `All blocks ≥ 75% of RTC` },
-              { label: 'Days ≥ 50% Blocks Compliant', value: compliantDays50Pct, unit: ` / ${results.length}`, color: '#fbbf24', mono: true, sub: `≥ 48 of 96 blocks at 75% RTC floor` },
+              { label: 'Fully Compliant Days (50%)', value: results.filter(r => r.schedule.summary.fully_compliant).length, unit: ` / ${results.length}`, color: '#10b981', mono: true, sub: `All blocks ≥ 50% of RTC` },
+              { label: 'Days ≥ 50% Blocks Compliant', value: compliantDays50Pct, unit: ` / ${results.length}`, color: '#fbbf24', mono: true, sub: `≥ 48 of 96 blocks at 50% RTC floor` },
             ].map(kpi => (
               <div key={kpi.label} className="glass-panel multiday-kpi-card">
                 <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>{kpi.label}</div>

@@ -26,7 +26,7 @@ export default function DispatchTable() {
         curtailment_start_block: String(curtailmentStart),
         curtailment_end_block: String(curtailmentEnd),
         roundtrip_loss_pct: String(roundtripLoss),
-        min_compliance_ratio: '0.75',
+        min_compliance_ratio: '0.50',
         max_soc_mwh: String(maxSocMwh),
         max_charge_mw: String(maxChargeMw),
         max_discharge_mw: String(maxDischargeMw),

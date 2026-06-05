@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import { Settings2, Table2, Plus, Trash2 } from 'lucide-react';
+import { Line } from 'react-chartjs-2';
+import '../utils/chartSetup';
+import { Settings2, Plus, Trash2 } from 'lucide-react';
 import { useOptimizer } from '../context/OptimizerContext';
 import type { CurtailmentSegment } from '../types';
 import {
@@ -48,103 +50,128 @@ function validateSegments(segments: CurtailmentSegment[]): string[] {
   return errors;
 }
 
-/* ── Curtailment Timeline Bar ── */
+/* ── Curtailment Line Chart — continuous single line ── */
 
 function CurtailmentTimeline({ segments }: { segments: CurtailmentSegment[] }) {
-  const [hovered, setHovered] = React.useState<number | null>(null);
-  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
+  const blockNums = Array.from({ length: 96 }, (_, i) => i + 1);
 
-  const blockColors = useMemo(() => {
-    const colors: Record<number, string> = {};
-    for (let b = 1; b <= 96; b++) {
-      const seg = segments.find(s => s.startBlock <= b && b <= s.endBlock);
-      if (!seg) colors[b] = '#166534';           // green — uncurtailed
-      else colors[b] = segmentColor(seg.maxMw);
-    }
-    return colors;
-  }, [segments]);
+  // Max partial cap for y-axis — uncurtailed sits at the top of the chart
+  const maxPartialCap = segments.filter(s => s.maxMw > 0).reduce((m, s) => Math.max(m, s.maxMw), 0);
+  const yMax = Math.max(maxPartialCap * 1.3, 50);
 
-  const hoveredSeg = hovered !== null
-    ? segments.find(s => s.startBlock <= hovered && hovered <= s.endBlock)
-    : null;
+  // Helper: returns {value, color, fill} for each block
+  const getInfo = (b: number) => {
+    const seg = segments.find(s => s.startBlock <= b && b <= s.endBlock);
+    if (!seg) return { value: yMax, border: 'rgba(22,101,52,0.9)',  bg: 'rgba(22,101,52,0.10)'  };
+    if (seg.maxMw === 0) return { value: 0,    border: '#dc2626',              bg: 'rgba(220,38,38,0.13)'  };
+    return            { value: seg.maxMw, border: '#d97706',              bg: 'rgba(217,119,6,0.13)'  };
+  };
+
+  const infos = useMemo(() => blockNums.map(b => getInfo(b)), [segments]);
+
+  const labels = useMemo(() => blockNums.map(b => {
+    const min = (b - 1) * 15;
+    const hh  = String(Math.floor(min / 60)).padStart(2, '0');
+    const mm  = String(min % 60).padStart(2, '0');
+    return (b - 1) % 4 === 0 ? `${hh}:${mm}` : '';
+  }), []);
+
+  const chartData = useMemo(() => ({
+    labels,
+    datasets: [{
+      label: 'MW Cap per Block',
+      data: infos.map(i => i.value),
+      // Per-point colours
+      pointBackgroundColor: infos.map(i => i.border),
+      pointBorderColor:     infos.map(i => i.border),
+      pointRadius:          infos.map((_, idx) => {
+        // show a dot at every transition boundary, hide mid-run points
+        const prev = idx > 0 ? infos[idx - 1] : null;
+        const next = idx < infos.length - 1 ? infos[idx + 1] : null;
+        const changed = (prev && prev.border !== infos[idx].border) ||
+                        (next && next.border !== infos[idx].border);
+        return changed ? 4 : 0;
+      }),
+      pointHoverRadius: 5,
+      borderWidth: 2.5,
+      fill: true,
+      tension: 0,
+      spanGaps: true,
+      // Chart.js v3 segment callbacks — colour each segment individually
+      segment: {
+        borderColor:     (ctx: any) => infos[ctx.p0DataIndex]?.border ?? '#94a3b8',
+        backgroundColor: (ctx: any) => infos[ctx.p0DataIndex]?.bg    ?? 'transparent',
+      },
+    }],
+  }), [infos, labels]);
+
+  const chartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 } as const,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom' as const,
+        labels: {
+          generateLabels: () => [
+            { text: 'Full curtailment (0 MW)', fillStyle: '#dc2626',             strokeStyle: '#dc2626',             lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+            { text: 'Partial cap (MW > 0)',    fillStyle: '#d97706',             strokeStyle: '#d97706',             lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+            { text: 'Uncurtailed',             fillStyle: 'rgba(22,101,52,0.7)', strokeStyle: 'rgba(22,101,52,0.9)', lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+          ],
+          color: '#94a3b8',
+          font: { family: 'Outfit', size: 11 },
+          boxWidth: 12,
+          padding: 14,
+          usePointStyle: true,
+        },
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        backgroundColor: 'rgba(13,20,38,0.95)',
+        titleColor: '#f8fafc',
+        bodyColor:  '#e2e8f0',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        padding: 10,
+        callbacks: {
+          title: (items: any[]) => {
+            const idx = items[0]?.dataIndex ?? 0;
+            const b   = idx + 1;
+            const min = idx * 15;
+            const hh  = String(Math.floor(min / 60)).padStart(2, '0');
+            const mm  = String(min % 60).padStart(2, '0');
+            return `Block ${b}  —  ${hh}:${mm}`;
+          },
+          label: (item: any) => {
+            const info = infos[item.dataIndex];
+            if (!info) return '';
+            if (info.border.startsWith('rgba(22,101')) return '  ✓ Uncurtailed (no cap)';
+            if (item.raw === 0)                         return '  ✗ Full curtailment (0 MW)';
+            return `  ⚡ Partial cap: ${item.raw} MW`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid:  { color: 'rgba(255,255,255,0.03)' },
+        ticks: { color: '#64748b', font: { family: 'Outfit', size: 9 }, maxRotation: 0, autoSkip: false },
+      },
+      y: {
+        min: 0,
+        max: yMax,
+        grid:  { color: 'rgba(255,255,255,0.04)' },
+        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
+        title: { display: true, text: 'MW Cap', color: '#64748b', font: { family: 'Outfit', size: 11 } },
+      },
+    },
+  }), [infos, yMax]);
 
   return (
-    <div style={{ position: 'relative', userSelect: 'none' }}>
-      {/* Block strip */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(96, 1fr)',
-          height: '40px',
-          borderRadius: '8px',
-          overflow: 'hidden',
-          border: '1px solid rgba(255,255,255,0.1)',
-          cursor: 'crosshair',
-        }}
-      >
-        {Array.from({ length: 96 }, (_, i) => i + 1).map(b => (
-          <div
-            key={b}
-            onMouseEnter={e => { setHovered(b); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
-            onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
-            onMouseLeave={() => setHovered(null)}
-            style={{
-              background: blockColors[b],
-              opacity: hovered === b ? 0.75 : 1,
-              transition: 'opacity 0.1s',
-            }}
-          />
-        ))}
-      </div>
-
-      {/* Time labels */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
-        {['00:00', '06:00', '12:00', '18:00', '24:00'].map(t => (
-          <span key={t}>{t}</span>
-        ))}
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '11px', color: '#94a3b8' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#dc2626', display: 'inline-block' }} />
-          Full curtailment (MW = 0)
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#d97706', display: 'inline-block' }} />
-          Partial cap (MW &gt; 0)
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-          <span style={{ width: 12, height: 12, borderRadius: 2, background: '#166534', display: 'inline-block' }} />
-          Uncurtailed
-        </span>
-      </div>
-
-      {/* Tooltip */}
-      {hovered !== null && (
-        <div style={{
-          position: 'fixed',
-          left: tooltipPos.x + 12,
-          top: tooltipPos.y - 36,
-          background: 'rgba(15,23,42,0.95)',
-          border: '1px solid rgba(255,255,255,0.15)',
-          borderRadius: '6px',
-          padding: '6px 10px',
-          fontSize: '12px',
-          color: '#e2e8f0',
-          pointerEvents: 'none',
-          zIndex: 9999,
-          whiteSpace: 'nowrap',
-        }}>
-          <strong>Block {hovered}</strong> — {blockToTime(hovered)}&nbsp;|&nbsp;
-          {hoveredSeg
-            ? hoveredSeg.maxMw === 0
-              ? <span style={{ color: '#f87171' }}>Full curtailment</span>
-              : <span style={{ color: '#fbbf24' }}>MW cap: {hoveredSeg.maxMw}</span>
-            : <span style={{ color: '#4ade80' }}>Uncurtailed</span>
-          }
-        </div>
-      )}
+    <div style={{ height: '220px', position: 'relative' }}>
+      <Line data={chartData as any} options={chartOptions as any} />
     </div>
   );
 }
@@ -314,9 +341,6 @@ export default function ConfigPage() {
     curtailmentEnabled, setCurtailmentEnabled,
     curtailmentSegments, setCurtailmentSegments,
     roundtripLoss, setRoundtripLoss,
-    sideTab, setSideTab,
-    blockOverrides, setBlockOverrides,
-    blocks,
     carryFromDate, initialSocMwh,
     handleClearCarry,
   } = useOptimizer();
@@ -330,14 +354,14 @@ export default function ConfigPage() {
       <div className="page-header-bar">
         <h2 className="page-heading">Advanced Configuration</h2>
         <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-          Curtailment windows, PSP parameters, block-level overrides, and carry-forward settings.
+          Curtailment windows, PSP parameters, and carry-forward settings.
         </p>
       </div>
 
-      {/* Two-column card layout */}
-      <div className="config-page-grid">
+      {/* Single-column layout */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-        {/* ─── Left Column: PSP & Curtailment ─── */}
+        {/* ─── PSP & Curtailment ─── */}
         <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Settings2 size={16} style={{ color: '#a5b4fc' }} />
@@ -496,66 +520,11 @@ export default function ConfigPage() {
               </li>
               <li style={{ marginBottom: '6px' }}>Orvakallu PSP storage capacity configurable up to {PSP_MAX_CAPACITY_MWH} MWh.</li>
               <li style={{ marginBottom: '6px' }}>PSP rates: charge ≤ {maxChargeMw} MW, discharge ≤ {maxDischargeMw} MW, min dispatch {minDispatchMw} MW.</li>
-              <li>Min delivery floor: 75% of RTC commitment.</li>
+              <li>Min delivery floor: 50% of RTC commitment.</li>
             </ul>
           </div>
         </div>
 
-        {/* ─── Right Column: Block-Level Data Overrides ─── */}
-        <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Table2 size={16} style={{ color: '#fbbf24' }} />
-              Block-Level Overrides
-            </h3>
-            {Object.keys(blockOverrides).length > 0 && (
-              <button onClick={() => setBlockOverrides({})} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', color: '#f87171', fontSize: '12px', padding: '5px 12px', cursor: 'pointer', fontWeight: '600' }}>Clear All ({Object.keys(blockOverrides).length})</button>
-            )}
-          </div>
-
-          <div style={{ fontSize: '12px', color: '#64748b', padding: '8px 12px', background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.15)', borderRadius: '8px' }}>
-            Override Wind/Solar MW per block — leave blank to use forecast values. Changes auto-sync to the optimizer.
-          </div>
-
-          <div className="table-container" style={{ maxHeight: '520px' }}>
-            <table className="schedule-table" style={{ tableLayout: 'fixed' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: '70px' }}>Block</th>
-                  <th style={{ color: '#00b4d8' }}>Wind MW Override</th>
-                  <th style={{ color: '#f59e0b' }}>Solar MW Override</th>
-                </tr>
-              </thead>
-              <tbody>
-                {blocks.map(b => (
-                  <tr key={b.block} style={{ background: b.curtail_flag ? 'rgba(51,65,85,0.3)' : 'transparent', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                    <td style={{ color: '#64748b', fontWeight: '700', fontFamily: 'var(--font-mono)' }}>
-                      {b.block} <span style={{ fontSize: '10px', color: '#475569' }}>{b.time.substring(0, 5)}</span>
-                    </td>
-                    <td style={{ padding: '4px 8px' }}>
-                      <input
-                        type="number"
-                        placeholder={b.wind_mw.toFixed(2)}
-                        value={blockOverrides[b.block]?.wind_mw ?? ''}
-                        onChange={e => setBlockOverrides(prev => ({ ...prev, [b.block]: { ...prev[b.block] ?? { wind_mw: '', solar_mw: '' }, wind_mw: e.target.value } }))}
-                        style={{ width: '100%', background: '#0a1020', border: '1px solid rgba(0,180,216,0.2)', borderRadius: '6px', color: '#00d2ff', padding: '6px 8px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}
-                      />
-                    </td>
-                    <td style={{ padding: '4px 8px' }}>
-                      <input
-                        type="number"
-                        placeholder={b.solar_mw.toFixed(2)}
-                        value={blockOverrides[b.block]?.solar_mw ?? ''}
-                        onChange={e => setBlockOverrides(prev => ({ ...prev, [b.block]: { ...prev[b.block] ?? { wind_mw: '', solar_mw: '' }, solar_mw: e.target.value } }))}
-                        style={{ width: '100%', background: '#0a1020', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '6px', color: '#f59e0b', padding: '6px 8px', fontSize: '13px', fontFamily: 'var(--font-mono)' }}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </div>
   );

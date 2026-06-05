@@ -41,7 +41,7 @@ def build_excel(forecast_df, block_results, summary, rtc_range,
                 initial_soc_mwh=0.0,
                 curtailment_enabled=True,
                 curtailment_start_block=37, curtailment_end_block=64,
-                roundtrip_loss_pct=20.0, min_compliance_ratio=0.75,
+                roundtrip_loss_pct=20.0, min_compliance_ratio=0.50,
                 max_soc_mwh=360.0, min_dispatch_mw=6.0) -> bytes:
     wb = Workbook()
     ws_cfg  = wb.active;  ws_cfg.title = "Config"
@@ -211,7 +211,7 @@ def _disp(ws, curtailment_start_block=37, curtailment_end_block=64,
           ("D","Wind MW\n(live formula)",12,WIND),
           ("E","Solar MW\n(live formula)",13,SOLAR),
           ("F","Combined\nGen MW",12,"22D3EE"),
-          ("G","Min Floor\nMW (75%)",11,WARN),
+          ("G","Min Floor\nMW (50%)",11,WARN),
           ("H","SoC Start\nMWh",11,"6366F1"),
           ("I","PSP\nDischarge MW",13,PSPD),
           ("J","PSP\nCharge MW",12,PSPC),

@@ -76,8 +76,8 @@ export default function DispatchChart() {
       },
       {
         type: 'line' as const,
-        label: 'Min 75% Compliance Floor (MW)',
-        data: blocks.map(() => rtcCommitment * 0.75),
+        label: 'Min 50% Compliance Floor (MW)',
+        data: blocks.map(() => rtcCommitment * 0.50),
         borderColor: 'rgba(239, 68, 68, 0.45)',
         borderWidth: 1.5,
         borderDash: [3, 3],

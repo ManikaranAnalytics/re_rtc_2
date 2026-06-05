@@ -71,7 +71,7 @@ def get_optimal_schedule(request: ScheduleRequest):
     Calculates the 96-block generation forecast and runs the sequential PSP optimization.
 
     Priority: RTC first → PSP only charges on surplus, discharges only on shortfall.
-    75% of RTC is the compliance floor (regulatory minimum delivery).
+    50% of RTC is the compliance floor (regulatory minimum delivery).
     """
     try:
         forecast_df = generate_forecast(
@@ -144,7 +144,7 @@ def get_rtc_range(request: RTCRangeRequest):
     """
     Returns min / Manikaran's Suggestion / max committable RTC for the given plant config.
 
-    - min_rtc_mw        : 75% of P10 non-curtailment generation (safe floor)
+    - min_rtc_mw        : 50% of P10 non-curtailment generation (safe floor)
     - recommended_rtc_mw: Max RTC with 100% block compliance (zero shortfall) — Manikaran's Suggestion
     - max_rtc_mw        : P90 non-curtailment generation (needs PSP backup for ~10% blocks)
 
