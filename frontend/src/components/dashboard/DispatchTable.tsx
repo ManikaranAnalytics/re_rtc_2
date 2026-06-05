@@ -126,6 +126,7 @@ export default function DispatchTable() {
               <th style={{ color: 'var(--color-rtm)' }}>RTM MW</th>
               <th style={{ color: '#34d399', fontSize: '11px' }}>Carry Budget</th>
               <th style={{ color: '#34d399', fontSize: '11px' }}>Carry Disch.</th>
+              <th style={{ color: '#ef4444', fontSize: '11px' }}>Shortfall MWh</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -178,6 +179,26 @@ export default function DispatchTable() {
                   </td>
                   <td className="mono-col" style={{ color: b.carry_discharge_mw > 0 ? '#6ee7b7' : 'var(--text-muted)', fontSize: '12px' }}>
                     {b.carry_discharge_mw > 0 ? b.carry_discharge_mw.toFixed(2) : '—'}
+                  </td>
+                  {/* Shortfall MWh cell */}
+                  <td className="mono-col">
+                    {isShortfall ? (
+                      <span style={{
+                        background: 'rgba(239,68,68,0.12)',
+                        color: '#f87171',
+                        border: '1px solid rgba(239,68,68,0.25)',
+                        borderRadius: '6px',
+                        padding: '2px 7px',
+                        fontSize: '11px',
+                        fontWeight: '600',
+                        fontFamily: 'var(--font-mono)',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        −{(Math.max(0, b.min_schedule - b.net_schedule) * 0.25).toFixed(3)} MWh
+                      </span>
+                    ) : (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>—</span>
+                    )}
                   </td>
                   <td>
                     <span className={`cell-badge ${isShortfall ? 'warn' : 'ok'}`}>

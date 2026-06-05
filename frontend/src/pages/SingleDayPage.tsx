@@ -9,6 +9,7 @@ import DispatchChart from '../components/dashboard/DispatchChart';
 import PSPTankGauge from '../components/dashboard/PSPTankGauge';
 import SoCTimelineModal from '../components/dashboard/SoCTimelineModal';
 import DispatchTable from '../components/dashboard/DispatchTable';
+import PowerWastagePanel from '../components/dashboard/PowerWastagePanel';
 
 // Config sidebar
 import ConfigPanel from '../components/config/ConfigPanel';
@@ -86,11 +87,12 @@ export default function SingleDayPage() {
         </div>
       </div>
 
-      {/* KPI Cards + Carry Bar */}
+      {/* KPI Cards + Carry Bar + Power Wastage */}
       {summary && (
         <>
           <KPICards />
           <CarryForwardBar />
+          <PowerWastagePanel />
         </>
       )}
 

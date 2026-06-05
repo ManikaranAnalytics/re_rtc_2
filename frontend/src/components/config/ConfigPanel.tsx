@@ -122,7 +122,12 @@ export default function ConfigPanel() {
                     <div>
                       <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '2px' }}>Optimal Commit</div>
                       <div style={{ fontSize: '22px', fontWeight: '800', color: '#34d399', fontFamily: 'monospace' }}>{rtcRange.recommended_rtc_mw.toFixed(1)} <span style={{ fontSize: '12px', fontWeight: '400' }}>MW</span></div>
-                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Max RTC → 0 shortfall blocks (dispatch-validated)</div>
+                      <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>
+                        0 shortfall in operable blocks
+                        {rtcRange.psp_curtailed_blocks > 0 && (
+                          <span style={{ color: '#f59e0b', marginLeft: '4px' }}>· {rtcRange.psp_curtailed_blocks} PSP-curtailed blocks excluded</span>
+                        )}
+                      </div>
                     </div>
                     <button onClick={() => setRtcCommitment(rtcRange.recommended_rtc_mw)} style={{ background: 'rgba(16,185,129,0.18)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: '6px', color: '#34d399', fontSize: '11px', padding: '4px 10px', cursor: 'pointer', fontWeight: '600', whiteSpace: 'nowrap' }}>✓ Use This</button>
                   </div>
@@ -144,6 +149,9 @@ export default function ConfigPanel() {
                   <div style={{ color: '#64748b' }}>Curtail lost: <span style={{ color: '#fbbf24' }}>{rtcRange.curtailment_period_gen_lost_mwh.toFixed(1)} MWh</span></div>
                   <div style={{ color: '#64748b' }}>Gen P10: <span style={{ color: '#cbd5e1' }}>{rtcRange.generation_stats.p10_mw.toFixed(1)} MW</span></div>
                   <div style={{ color: '#64748b' }}>Gen P90: <span style={{ color: '#cbd5e1' }}>{rtcRange.generation_stats.p90_mw.toFixed(1)} MW</span></div>
+                  {(rtcRange.psp_curtailed_blocks ?? 0) > 0 && (
+                    <div style={{ color: '#64748b', gridColumn: '1/-1' }}>PSP-curtailed blocks (excluded from RTC calc): <span style={{ color: '#f59e0b' }}>{rtcRange.psp_curtailed_blocks}</span></div>
+                  )}
                 </div>
               </>
             )}

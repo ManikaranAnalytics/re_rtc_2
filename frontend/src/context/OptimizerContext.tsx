@@ -32,6 +32,18 @@ interface OptimizerContextValue {
   minDispatchMw: number;
   setMinDispatchMw: React.Dispatch<React.SetStateAction<number>>;
 
+  // Auto-derive override flags — true = user has manually set this field
+  chargeOverridden: boolean;
+  setChargeOverridden: React.Dispatch<React.SetStateAction<boolean>>;
+  dischargeOverridden: boolean;
+  setDischargeOverridden: React.Dispatch<React.SetStateAction<boolean>>;
+  minDispatchOverridden: boolean;
+  setMinDispatchOverridden: React.Dispatch<React.SetStateAction<boolean>>;
+  // Auto-derived values (always computed from maxSocMwh, regardless of override)
+  autoChargeMw: number;
+  autoDischargeMw: number;
+  autoMinDispatchMw: number;
+
   // Curtailment — segment-based
   curtailmentEnabled: boolean;
   setCurtailmentEnabled: React.Dispatch<React.SetStateAction<boolean>>;
@@ -119,6 +131,12 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   const [maxDischargeMw, setMaxDischargeMw] = useState(savedConfig.maxDischargeMw);
   const [minDispatchMw, setMinDispatchMw] = useState(savedConfig.minDispatchMw);
 
+  // Override flags: true = user has manually dragged and we should not auto-update
+  const [chargeOverridden, setChargeOverridden] = useState(false);
+  const [dischargeOverridden, setDischargeOverridden] = useState(false);
+  const [minDispatchOverridden, setMinDispatchOverridden] = useState(false);
+
+
   // Curtailment config
   const [curtailmentEnabled, setCurtailmentEnabled] = useState(savedConfig.curtailmentEnabled);
   const [curtailmentSegments, setCurtailmentSegments] = useState<CurtailmentSegment[]>(savedConfig.curtailmentSegments);
@@ -156,6 +174,24 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   const [carryFromDate, setCarryFromDate] = useState<string | null>(savedConfig.carryFromDate);
 
   const skipPersistRef = useRef(true);
+
+  // ── Auto-derive from maxSocMwh when not manually overridden ──
+  const derivedCharge     = Math.round((maxSocMwh / 6) * 2) / 2;   // nearest 0.5 MW
+  const derivedDischarge  = Math.round((maxSocMwh / 6) * 2) / 2;
+  const derivedMinDispatch = Math.round((maxSocMwh / 36) * 2) / 2;
+
+  useEffect(() => {
+    if (!chargeOverridden) setMaxChargeMw(derivedCharge);
+  }, [derivedCharge, chargeOverridden]);
+
+  useEffect(() => {
+    if (!dischargeOverridden) setMaxDischargeMw(derivedDischarge);
+  }, [derivedDischarge, dischargeOverridden]);
+
+  useEffect(() => {
+    if (!minDispatchOverridden) setMinDispatchMw(derivedMinDispatch);
+  }, [derivedMinDispatch, minDispatchOverridden]);
+
 
   const persistConfig = useCallback((): PersistedOptimizerConfig => {
     const config: PersistedOptimizerConfig = {
@@ -414,6 +450,12 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     maxChargeMw, setMaxChargeMw,
     maxDischargeMw, setMaxDischargeMw,
     minDispatchMw, setMinDispatchMw,
+    chargeOverridden, setChargeOverridden,
+    dischargeOverridden, setDischargeOverridden,
+    minDispatchOverridden, setMinDispatchOverridden,
+    autoChargeMw: derivedCharge,
+    autoDischargeMw: derivedDischarge,
+    autoMinDispatchMw: derivedMinDispatch,
     curtailmentEnabled, setCurtailmentEnabled,
     curtailmentSegments, setCurtailmentSegments,
     curtailmentStart,

@@ -223,6 +223,7 @@ class RTCRangeResponse(BaseModel):
     curtailment_partial_loss_mwh: float = Field(0.0, description="Generation lost to MW cap in partial-curtailment blocks (MWh)")
     generation_stats: GenerationStats
     psp_discharge_headroom_mw: float
+    psp_curtailed_blocks: int = Field(0, description="Blocks excluded from RTC suggestion: PSP discharge fully blocked (maxDischargeMw=0)")
     min_rtc_mw: float
     max_rtc_mw: float
     recommended_rtc_mw: float

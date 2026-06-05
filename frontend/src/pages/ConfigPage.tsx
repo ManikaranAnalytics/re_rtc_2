@@ -576,6 +576,10 @@ export default function ConfigPage() {
     maxChargeMw, setMaxChargeMw,
     maxDischargeMw, setMaxDischargeMw,
     minDispatchMw, setMinDispatchMw,
+    chargeOverridden, setChargeOverridden,
+    dischargeOverridden, setDischargeOverridden,
+    minDispatchOverridden, setMinDispatchOverridden,
+    autoChargeMw, autoDischargeMw, autoMinDispatchMw,
     curtailmentEnabled, setCurtailmentEnabled,
     curtailmentSegments, setCurtailmentSegments,
     roundtripLoss, setRoundtripLoss,
@@ -733,12 +737,29 @@ export default function ConfigPage() {
           <div className="config-group">
             <div className="config-label-area">
               <span className="config-label">Max Drawal (Charge)</span>
-              <span className="config-value" style={{ color: '#38bdf8' }}>{maxChargeMw.toFixed(0)} MW</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="config-value" style={{ color: '#38bdf8' }}>{maxChargeMw.toFixed(0)} MW</span>
+                <button
+                  onClick={() => { setChargeOverridden(false); setMaxChargeMw(autoChargeMw); }}
+                  title={chargeOverridden ? `Reset to auto (${autoChargeMw} MW = PSP ÷ 6)` : `Auto-derived from PSP: ${autoChargeMw} MW`}
+                  style={{
+                    fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: chargeOverridden ? 'pointer' : 'default',
+                    background: chargeOverridden ? 'rgba(251,191,36,0.15)' : 'rgba(56,189,248,0.10)',
+                    border: `1px solid ${chargeOverridden ? 'rgba(251,191,36,0.5)' : 'rgba(56,189,248,0.3)'}`,
+                    color: chargeOverridden ? '#fbbf24' : '#7dd3fc', fontWeight: '600', letterSpacing: '0.3px',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {chargeOverridden ? `⚠ Override · Reset` : `⚡ Auto: ${autoChargeMw} MW`}
+                </button>
+              </div>
             </div>
-            <input type="range" min="0" max={PSP_SLIDER_MAX_CHARGE_MW} step="1" className="range-slider" value={maxChargeMw} onChange={e => setMaxChargeMw(parseFloat(e.target.value))} style={{ '--color-wind': '#38bdf8' } as React.CSSProperties} />
+            <input type="range" min="0" max={PSP_SLIDER_MAX_CHARGE_MW} step="0.5" className="range-slider" value={maxChargeMw}
+              onChange={e => { setChargeOverridden(true); setMaxChargeMw(parseFloat(e.target.value)); }}
+              style={{ '--color-wind': '#38bdf8' } as React.CSSProperties} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span>0 MW</span>
-              <span>Grid → PSP charging limit</span>
+              <span>Grid → PSP charging limit &nbsp;·&nbsp; <span style={{ color: '#94a3b8' }}>formula: PSP ÷ 6 = {autoChargeMw} MW</span></span>
             </div>
           </div>
 
@@ -746,12 +767,29 @@ export default function ConfigPage() {
           <div className="config-group">
             <div className="config-label-area">
               <span className="config-label">Max Injection (Discharge)</span>
-              <span className="config-value" style={{ color: '#34d399' }}>{maxDischargeMw.toFixed(0)} MW</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="config-value" style={{ color: '#34d399' }}>{maxDischargeMw.toFixed(0)} MW</span>
+                <button
+                  onClick={() => { setDischargeOverridden(false); setMaxDischargeMw(autoDischargeMw); }}
+                  title={dischargeOverridden ? `Reset to auto (${autoDischargeMw} MW = PSP ÷ 6)` : `Auto-derived from PSP: ${autoDischargeMw} MW`}
+                  style={{
+                    fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: dischargeOverridden ? 'pointer' : 'default',
+                    background: dischargeOverridden ? 'rgba(251,191,36,0.15)' : 'rgba(52,211,153,0.10)',
+                    border: `1px solid ${dischargeOverridden ? 'rgba(251,191,36,0.5)' : 'rgba(52,211,153,0.3)'}`,
+                    color: dischargeOverridden ? '#fbbf24' : '#6ee7b7', fontWeight: '600', letterSpacing: '0.3px',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {dischargeOverridden ? `⚠ Override · Reset` : `⚡ Auto: ${autoDischargeMw} MW`}
+                </button>
+              </div>
             </div>
-            <input type="range" min="0" max={PSP_SLIDER_MAX_DISCHARGE_MW} step="1" className="range-slider" value={maxDischargeMw} onChange={e => setMaxDischargeMw(parseFloat(e.target.value))} style={{ '--color-wind': '#34d399' } as React.CSSProperties} />
+            <input type="range" min="0" max={PSP_SLIDER_MAX_DISCHARGE_MW} step="0.5" className="range-slider" value={maxDischargeMw}
+              onChange={e => { setDischargeOverridden(true); setMaxDischargeMw(parseFloat(e.target.value)); }}
+              style={{ '--color-wind': '#34d399' } as React.CSSProperties} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span>0 MW</span>
-              <span>PSP → grid discharge limit</span>
+              <span>PSP → grid discharge limit &nbsp;·&nbsp; <span style={{ color: '#94a3b8' }}>formula: PSP ÷ 6 = {autoDischargeMw} MW</span></span>
             </div>
           </div>
 
@@ -759,12 +797,29 @@ export default function ConfigPage() {
           <div className="config-group">
             <div className="config-label-area">
               <span className="config-label">Min Dispatch (CERC)</span>
-              <span className="config-value" style={{ color: '#fbbf24' }}>{minDispatchMw.toFixed(0)} MW</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span className="config-value" style={{ color: '#fbbf24' }}>{minDispatchMw.toFixed(1)} MW</span>
+                <button
+                  onClick={() => { setMinDispatchOverridden(false); setMinDispatchMw(autoMinDispatchMw); }}
+                  title={minDispatchOverridden ? `Reset to auto (${autoMinDispatchMw} MW = PSP ÷ 36)` : `Auto-derived from PSP: ${autoMinDispatchMw} MW`}
+                  style={{
+                    fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: minDispatchOverridden ? 'pointer' : 'default',
+                    background: minDispatchOverridden ? 'rgba(251,191,36,0.15)' : 'rgba(251,191,36,0.10)',
+                    border: `1px solid ${minDispatchOverridden ? 'rgba(251,191,36,0.5)' : 'rgba(251,191,36,0.25)'}`,
+                    color: minDispatchOverridden ? '#f59e0b' : '#fbbf24', fontWeight: '600', letterSpacing: '0.3px',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {minDispatchOverridden ? `⚠ Override · Reset` : `⚡ Auto: ${autoMinDispatchMw} MW`}
+                </button>
+              </div>
             </div>
-            <input type="range" min="0" max={PSP_SLIDER_MAX_MIN_DISPATCH_MW} step="1" className="range-slider" value={minDispatchMw} onChange={e => setMinDispatchMw(parseFloat(e.target.value))} style={{ '--color-wind': '#fbbf24' } as React.CSSProperties} />
+            <input type="range" min="0" max={PSP_SLIDER_MAX_MIN_DISPATCH_MW} step="0.5" className="range-slider" value={minDispatchMw}
+              onChange={e => { setMinDispatchOverridden(true); setMinDispatchMw(parseFloat(e.target.value)); }}
+              style={{ '--color-wind': '#fbbf24' } as React.CSSProperties} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span>0 MW (off)</span>
-              <span>Min charge/discharge when PSP runs</span>
+              <span>Min charge/discharge when PSP runs &nbsp;·&nbsp; <span style={{ color: '#94a3b8' }}>formula: Max Drawal ÷ 6 = {autoMinDispatchMw} MW</span></span>
             </div>
           </div>
 

@@ -53,7 +53,12 @@ export interface SummaryData {
   total_blocks: number;
   fully_compliant: boolean;
   total_rtm_surplus_mwh: number;
+  total_net_delivered_mwh?: number;
   psp_usable_charged_mwh?: number;
+  // Power wastage KPIs
+  compliance_wasted_mwh?: number;
+  potential_discharge_mwh?: number;
+  shortfall_energy_mwh?: number;
 }
 
 export interface CarryForwardInfo {
@@ -92,6 +97,7 @@ export interface RTCRangeData {
   curtailment_partial_loss_mwh: number;
   generation_stats: GenerationStats;
   psp_discharge_headroom_mw: number;
+  psp_curtailed_blocks: number;   // blocks excluded from RTC suggestion (PSP discharge = 0)
   min_rtc_mw: number;
   max_rtc_mw: number;
   recommended_rtc_mw: number;

@@ -167,6 +167,38 @@ export default function MultiDayAnalysis() {
   const totalDischargedMwh = results.reduce((s, r) => s + r.schedule.summary.total_discharged_mwh, 0);
   const totalRtmSurplus = results.reduce((s, r) => s + r.schedule.summary.total_rtm_surplus_mwh, 0);
   const totalCycles = results.reduce((s, r) => s + r.schedule.summary.cycles_used, 0);
+  const totalComplianceWasted = results.reduce((s, r) => s + (r.schedule.summary.compliance_wasted_mwh ?? 0), 0);
+  const totalPotentialDischarge = results.reduce((s, r) => s + (r.schedule.summary.potential_discharge_mwh ?? 0), 0);
+  const totalNetDeliveredMwh = results.reduce(
+    (s, r) => s + (r.schedule.summary.total_net_delivered_mwh
+      ?? r.schedule.blocks.reduce((bs, b) => bs + b.net_schedule * 0.25, 0)),
+    0
+  );
+  // Compute shortfall energy directly from block data (never stale, same formula as dispatch table)
+  const totalShortfallEnergyMwh = results.reduce(
+    (s, r) => s + r.schedule.blocks.reduce(
+      (bs, b) => bs + Math.max(0, b.min_schedule - b.net_schedule) * 0.25, 0
+    ),
+    0
+  );
+  const totalNonCompliantBlocks = totalBlocks - compliantBlocks;
+  const avgShortfallPerBlock = totalNonCompliantBlocks > 0
+    ? totalShortfallEnergyMwh / totalNonCompliantBlocks
+    : 0;
+  const avgShortfallPerDay = results.length > 0
+    ? totalShortfallEnergyMwh / results.length
+    : 0;
+  // Worst single block across the entire period
+  const worstBlockMwhPeriod = results.reduce((worst, r) => {
+    const dayWorst = r.schedule.blocks
+      .filter(b => !b.compliant)
+      .reduce((w, b) => Math.max(w, Math.max(0, b.min_schedule - b.net_schedule) * 0.25), 0);
+    return Math.max(worst, dayWorst);
+  }, 0);
+
+  const overallDispatchEfficiency = totalPotentialDischarge > 0
+    ? Math.min(100, (totalDischargedMwh / totalPotentialDischarge) * 100)
+    : 100;
 
   // ── Average Metrics ──
   const avgDailyCharge = totalChargedMwh / n;
@@ -300,10 +332,15 @@ export default function MultiDayAnalysis() {
         type: 'line' as const,
         label: 'Net Schedule (MW)',
         data: allBlocks.map(ab => ab.block.net_schedule),
-        borderColor: '#10b981',
-        borderWidth: 1.5,
+        borderColor: '#ffffff',
+        borderWidth: 2.5,
         pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#ffffff',
+        pointHoverBorderColor: '#ffffff',
         fill: false,
+        tension: 0,
+        order: -1,
       },
       {
         type: 'line' as const,
@@ -537,6 +574,50 @@ export default function MultiDayAnalysis() {
       {/* ─── Results ─── */}
       {results.length > 0 && (
         <>
+          {/* ── Total Delivered to Consumer — Hero Card ── */}
+          <div className="glass-panel" style={{
+            background: 'linear-gradient(135deg, rgba(16,185,129,0.10) 0%, rgba(52,211,153,0.06) 100%)',
+            border: '1px solid rgba(16,185,129,0.30)',
+            padding: '20px 24px',
+            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '24px',
+            flexWrap: 'wrap',
+          }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <div style={{ fontSize: '11px', color: '#6ee7b7', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '4px', fontWeight: '600' }}>
+                ⚡ Total Power Delivered to Consumer
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                <span style={{ fontSize: '42px', fontWeight: '800', color: '#34d399', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>
+                  {totalNetDeliveredMwh.toFixed(1)}
+                </span>
+                <span style={{ fontSize: '18px', color: '#6ee7b7', fontWeight: '500' }}>MWh</span>
+              </div>
+              <div style={{ fontSize: '12px', color: '#4ade80', marginTop: '4px' }}>
+                {(totalNetDeliveredMwh / Math.max(results.length, 1)).toFixed(1)} MWh/day average · {results.length}-day period
+              </div>
+            </div>
+            <div style={{ flex: '1', minWidth: '200px', borderLeft: '1px solid rgba(16,185,129,0.2)', paddingLeft: '24px' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>Delivery vs RTC target</div>
+              {(() => {
+                const target = rtcCommitment * 96 * 0.25 * results.length;
+                const pct = target > 0 ? Math.min(100, (totalNetDeliveredMwh / target) * 100) : 0;
+                return (
+                  <>
+                    <div style={{ height: '10px', borderRadius: '5px', background: 'rgba(255,255,255,0.05)', overflow: 'hidden', marginBottom: '6px' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: 'linear-gradient(90deg, #10b981, #34d399)', borderRadius: '5px', transition: 'width 0.8s ease' }} />
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                      <span style={{ color: pct >= 100 ? '#34d399' : pct >= 80 ? '#fbbf24' : '#f87171', fontWeight: '700' }}>{pct.toFixed(1)}%</span>
+                      {' '}of {target.toFixed(0)} MWh target ({rtcCommitment} MW × {results.length} days)
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
           {/* Aggregated KPIs — Totals Row */}
           <div className="multiday-kpi-grid">
             {[
@@ -575,6 +656,145 @@ export default function MultiDayAnalysis() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Aggregated KPIs — Power Wastage Row */}
+          <div style={{ marginBottom: '20px' }}>
+            <div style={{ fontSize: '13px', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: '#f59e0b' }}>⚡</span> Power Wastage Metrics
+            </div>
+            <div className="multiday-kpi-grid">
+              <div className="glass-panel multiday-kpi-card" style={{ borderLeft: '3px solid #f59e0b' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Compliance Wasted</div>
+                <div style={{ fontSize: '24px', fontWeight: '800', color: '#f59e0b', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {totalComplianceWasted.toFixed(1)}<span style={{ fontSize: '13px', fontWeight: '400', color: '#64748b' }}> MWh</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px' }}>Energy lost due to CERC 6 MW dispatch floor</div>
+              </div>
+              <div className="glass-panel multiday-kpi-card" style={{ borderLeft: '3px solid #00d2ff' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Potential Discharge</div>
+                <div style={{ fontSize: '24px', fontWeight: '800', color: '#00d2ff', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {totalPotentialDischarge.toFixed(1)}<span style={{ fontSize: '13px', fontWeight: '400', color: '#64748b' }}> MWh</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px' }}>Total shortfall energy across all days (theoretical max)</div>
+              </div>
+              <div className="glass-panel multiday-kpi-card" style={{ borderLeft: '3px solid #10b981' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Actual Discharged</div>
+                <div style={{ fontSize: '24px', fontWeight: '800', color: '#10b981', fontFamily: 'JetBrains Mono, monospace' }}>
+                  {totalDischargedMwh.toFixed(1)}<span style={{ fontSize: '13px', fontWeight: '400', color: '#64748b' }}> MWh</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px' }}>PSP energy successfully dispatched to grid</div>
+              </div>
+              <div className="glass-panel multiday-kpi-card" style={{ borderLeft: '3px solid #8b5cf6' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Dispatch Efficiency</div>
+                <div style={{ fontSize: '24px', fontWeight: '800', fontFamily: 'JetBrains Mono, monospace',
+                  color: overallDispatchEfficiency >= 90 ? '#10b981' : overallDispatchEfficiency >= 70 ? '#f59e0b' : '#ef4444' }}>
+                  {overallDispatchEfficiency.toFixed(1)}<span style={{ fontSize: '13px', fontWeight: '400', color: '#64748b' }}>%</span>
+                </div>
+                <div style={{ fontSize: '10px', color: '#475569', marginTop: '4px' }}>Actual ÷ potential discharge across all days</div>
+              </div>
+            </div>
+
+            {/* Stacked bar — period-level breakdown */}
+            {totalPotentialDischarge > 0 && (() => {
+              const actualPct = (totalDischargedMwh / totalPotentialDischarge) * 100;
+              const compliancePct = (totalComplianceWasted / totalPotentialDischarge) * 100;
+              const socPct = Math.max(0, 100 - actualPct - compliancePct);
+              return (
+                <div style={{ marginTop: '8px', padding: '14px 16px', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '8px' }}>
+                    <span>Discharge Breakdown ({results.length}-day period)</span>
+                    <span style={{ color: '#475569' }}>{totalPotentialDischarge.toFixed(1)} MWh potential</span>
+                  </div>
+                  <div className="pw-bar-track">
+                    <div className="pw-bar-segment pw-bar-actual" style={{ width: `${actualPct}%` }} title={`Dispatched: ${totalDischargedMwh.toFixed(1)} MWh`} />
+                    <div className="pw-bar-segment pw-bar-compliance" style={{ width: `${compliancePct}%` }} title={`Compliance waste: ${totalComplianceWasted.toFixed(1)} MWh`} />
+                    {socPct > 0.5 && <div className="pw-bar-segment pw-bar-soc" style={{ width: `${socPct}%` }} title={`SoC-limited: ${(totalPotentialDischarge - totalDischargedMwh - totalComplianceWasted).toFixed(1)} MWh`} />}
+                  </div>
+                  <div className="pw-legend">
+                    <div className="pw-legend-item"><span className="pw-legend-dot pw-legend-dot--actual" /><span>Dispatched ({totalDischargedMwh.toFixed(1)} MWh)</span></div>
+                    <div className="pw-legend-item"><span className="pw-legend-dot pw-legend-dot--compliance" /><span>Compliance loss ({totalComplianceWasted.toFixed(1)} MWh)</span></div>
+                    {socPct > 0.5 && <div className="pw-legend-item"><span className="pw-legend-dot pw-legend-dot--soc" /><span>SoC-limited ({(totalPotentialDischarge - totalDischargedMwh - totalComplianceWasted).toFixed(1)} MWh)</span></div>}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* ─── Non-Compliance Energy Shortage ─── */}
+          <div style={{
+            padding: '18px 20px',
+            background: 'linear-gradient(135deg, rgba(239,68,68,0.08) 0%, rgba(220,38,38,0.04) 100%)',
+            border: '1px solid rgba(239,68,68,0.25)',
+            borderRadius: '12px',
+            marginBottom: '20px',
+          }}>
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '16px' }}>⚠️</span>
+              <span style={{ fontSize: '13px', fontWeight: '700', color: '#fca5a5', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Non-Compliance Energy Shortage
+              </span>
+              <span style={{ marginLeft: 'auto', fontSize: '11px', color: '#64748b' }}>
+                {totalNonCompliantBlocks} non-compliant blocks across {results.length} days
+              </span>
+            </div>
+
+            {totalNonCompliantBlocks > 0 ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px' }}>
+
+                {/* Total energy shortage */}
+                <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '14px', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', top: '-12px', right: '-12px', width: '60px', height: '60px', background: 'radial-gradient(circle, rgba(239,68,68,0.18) 0%, transparent 70%)', pointerEvents: 'none' }} />
+                  <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Total Shortage ({results.length} days)</div>
+                  <div style={{ fontSize: '28px', fontWeight: '800', color: '#f87171', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{totalShortfallEnergyMwh.toFixed(3)}</div>
+                  <div style={{ fontSize: '12px', color: '#f87171', marginTop: '2px' }}>MWh below compliance floor</div>
+                </div>
+
+                {/* Avg per day */}
+                <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Avg Shortage / Day</div>
+                  <div style={{ fontSize: '28px', fontWeight: '800', color: '#fca5a5', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{avgShortfallPerDay.toFixed(3)}</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>MWh per day on average</div>
+                </div>
+
+                {/* Avg per non-compliant block */}
+                <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Avg Deficit / Block</div>
+                  <div style={{ fontSize: '28px', fontWeight: '800', color: '#fca5a5', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{avgShortfallPerBlock.toFixed(3)}</div>
+                  <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>MWh per non-compliant block</div>
+                </div>
+
+                {/* Worst single block in period */}
+                {worstBlockMwhPeriod > 0 && (
+                  <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '10px', padding: '14px' }}>
+                    <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>Worst Block in Period</div>
+                    <div style={{ fontSize: '28px', fontWeight: '800', color: '#fca5a5', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{worstBlockMwhPeriod.toFixed(3)}</div>
+                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>MWh single worst block</div>
+                  </div>
+                )}
+
+                {/* % of period RTC target missed */}
+                <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '10px', padding: '14px' }}>
+                  <div style={{ fontSize: '10px', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>% of Period RTC Missed</div>
+                  {(() => {
+                    const periodTarget = rtcCommitment * 96 * 0.25 * results.length;
+                    const pct = periodTarget > 0 ? (totalShortfallEnergyMwh / periodTarget) * 100 : 0;
+                    return (
+                      <>
+                        <div style={{ fontSize: '28px', fontWeight: '800', color: pct > 5 ? '#ef4444' : '#fca5a5', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{pct.toFixed(2)}</div>
+                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>% of {periodTarget.toFixed(0)} MWh target</div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: '12px 16px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#34d399' }}>
+                <span>✓</span>
+                <span><strong>Zero energy shortage</strong> — all {totalBlocks} blocks met the compliance floor across {results.length} days.</span>
+              </div>
+            )}
           </div>
 
           {/* ─── RTC Optimal Suggestion Card ─── */}
@@ -720,7 +940,17 @@ export default function MultiDayAnalysis() {
                 <Chart type="line" data={socChartData as any} options={timelineChartOptions as any} />
               )}
               {chartView === 'dispatch' && (
-                <Chart type="bar" data={dispatchChartData as any} options={timelineChartOptions as any} />
+                <Chart type="bar" data={dispatchChartData as any} options={timelineChartOptions as any} plugins={[{
+                  id: 'netScheduleGlow',
+                  beforeDatasetDraw(chart: any, args: any) {
+                    if (chart.data.datasets[args.index]?.label !== 'Net Schedule (MW)') return;
+                    chart.ctx.save(); chart.ctx.shadowColor = '#ffffff'; chart.ctx.shadowBlur = 18;
+                  },
+                  afterDatasetDraw(chart: any, args: any) {
+                    if (chart.data.datasets[args.index]?.label !== 'Net Schedule (MW)') return;
+                    chart.ctx.restore();
+                  },
+                }]} />
               )}
               {chartView === 'compliance' && (
                 <Chart type="bar" data={complianceChartData as any} options={complianceChartOptions as any} />
@@ -739,8 +969,11 @@ export default function MultiDayAnalysis() {
                     <th>Compliant</th>
                     <th>Shortfall</th>
                     <th>Status</th>
+                    <th style={{ color: '#6ee7b7' }}>Delivered MWh</th>
                     <th>Charged MWh</th>
                     <th>Discharged MWh</th>
+                    <th>Potential Dis.</th>
+                    <th>Compliance Waste</th>
                     <th>PSP Cycles</th>
                     <th>Start SoC</th>
                     <th>End SoC</th>
@@ -761,8 +994,13 @@ export default function MultiDayAnalysis() {
                             {s.fully_compliant ? '✓ Pass' : '⚠ Fail'}
                           </span>
                         </td>
+                        <td className="mono-col" style={{ color: '#34d399', fontWeight: '600' }}>
+                          {(s.total_net_delivered_mwh ?? r.schedule.blocks.reduce((bs, b) => bs + b.net_schedule * 0.25, 0)).toFixed(1)}
+                        </td>
                         <td className="mono-col">{s.total_charged_mwh.toFixed(1)}</td>
                         <td className="mono-col">{s.total_discharged_mwh.toFixed(1)}</td>
+                        <td className="mono-col" style={{ color: '#00d2ff' }}>{(s.potential_discharge_mwh ?? 0).toFixed(1)}</td>
+                        <td className="mono-col" style={{ color: (s.compliance_wasted_mwh ?? 0) > 0 ? '#f59e0b' : '#334155' }}>{(s.compliance_wasted_mwh ?? 0).toFixed(1)}</td>
                         <td className="mono-col">{s.cycles_used.toFixed(2)}</td>
                         <td className="mono-col" style={{ color: '#94a3b8' }}>{startSoc.toFixed(1)}</td>
                         <td className="mono-col" style={{ color: '#a78bfa' }}>{s.end_soc_mwh.toFixed(1)}</td>
@@ -782,13 +1020,18 @@ export default function MultiDayAnalysis() {
                           {((compliantBlocks / totalBlocks) * 100).toFixed(1)}%
                         </span>
                       </td>
+                      <td className="mono-col" style={{ color: '#34d399', fontWeight: '700' }}>{totalNetDeliveredMwh.toFixed(1)}</td>
                       <td className="mono-col">{totalChargedMwh.toFixed(1)}</td>
                       <td className="mono-col">{totalDischargedMwh.toFixed(1)}</td>
+                      <td className="mono-col" style={{ color: '#00d2ff' }}>{totalPotentialDischarge.toFixed(1)}</td>
+                      <td className="mono-col" style={{ color: totalComplianceWasted > 0 ? '#f59e0b' : '#334155' }}>{totalComplianceWasted.toFixed(1)}</td>
                       <td className="mono-col">{totalCycles.toFixed(2)}</td>
                       <td className="mono-col" style={{ color: '#94a3b8' }}>0.0</td>
                       <td className="mono-col" style={{ color: '#a78bfa' }}>{results[results.length - 1]?.schedule.summary.end_soc_mwh.toFixed(1)}</td>
                       <td className="mono-col">{totalRtmSurplus.toFixed(1)}</td>
                     </tr>
+
+
                   </tfoot>
                 )}
               </table>

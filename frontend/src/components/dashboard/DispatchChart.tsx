@@ -5,6 +5,24 @@ import { useOptimizer } from '../../context/OptimizerContext';
 export default function DispatchChart() {
   const { blocks, rtcCommitment, loading } = useOptimizer();
 
+  // ── Neon glow plugin for Net Schedule line ──
+  const netScheduleGlowPlugin = {
+    id: 'netScheduleGlow',
+    beforeDatasetDraw(chart: any, args: any) {
+      const ds = chart.data.datasets[args.index];
+      if (ds.label !== 'Net Schedule (MW)') return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 18;
+    },
+    afterDatasetDraw(chart: any, args: any) {
+      const ds = chart.data.datasets[args.index];
+      if (ds.label !== 'Net Schedule (MW)') return;
+      chart.ctx.restore();
+    },
+  };
+
   const labels = blocks.map(b => b.time.substring(0, 5));
 
   const chartData = {
@@ -57,12 +75,17 @@ export default function DispatchChart() {
       },
       {
         type: 'line' as const,
-        label: 'Net Grid Injected Schedule (MW)',
+        label: 'Net Schedule (MW)',
         data: blocks.map(b => b.net_schedule),
-        borderColor: '#10b981',
+        borderColor: '#ffffff',
         borderWidth: 2.5,
         pointRadius: 0,
+        pointHoverRadius: 5,
+        pointHoverBackgroundColor: '#ffffff',
+        pointHoverBorderColor: '#ffffff',
         fill: false,
+        tension: 0,
+        order: -1,  // draw on top of bars
       },
       {
         type: 'line' as const,
@@ -108,7 +131,9 @@ export default function DispatchChart() {
             let label = context.dataset.label || '';
             let val = context.raw;
             if (val < 0) val = -val;
-            return `  ${label}: ${val.toFixed(2)} MW`;
+            const isNetSchedule = label === 'Net Schedule (MW)';
+            const prefix = isNetSchedule ? '  ⚡' : '  ';
+            return `${prefix}${label}: ${val.toFixed(2)} MW`;
           }
         }
       }
@@ -154,8 +179,8 @@ export default function DispatchChart() {
             <span>RTM Surplus</span>
           </div>
           <div className="legend-item">
-            <div style={{ width: '12px', height: '3px', background: '#10b981' }}></div>
-            <span>Net Deliverable</span>
+            <div style={{ width: '22px', height: '2.5px', background: '#ffffff', boxShadow: '0 0 6px #ffffff, 0 0 12px rgba(255,255,255,0.6)', borderRadius: '2px' }}></div>
+            <span style={{ color: '#ffffff', fontWeight: '600' }}>Net Schedule</span>
           </div>
           <div className="legend-item">
             <div style={{ width: '12px', height: '1.5px', borderBottom: '2px dashed rgba(239, 68, 68, 0.75)' }}></div>
@@ -171,7 +196,7 @@ export default function DispatchChart() {
             <div className="spinner" style={{ width: '28px', height: '28px', borderRadius: '50%', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: '#00d2ff', animation: 'spin 1s linear infinite' }}></div>
           </div>
         )}
-        <Chart type="bar" data={chartData as any} options={chartOptions as any} />
+        <Chart type="bar" data={chartData as any} options={chartOptions as any} plugins={[netScheduleGlowPlugin]} />
       </div>
     </section>
   );

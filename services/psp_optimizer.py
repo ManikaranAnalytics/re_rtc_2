@@ -72,6 +72,10 @@ def optimize_psp_dispatch(
     total_carry_expired_mwh = 0.0
     today_charge_schedule = []   # track today's charges for handoff to next day
 
+    # Power wastage accumulators
+    compliance_wasted_mwh = 0.0    # energy lost due to CERC 6MW min-dispatch rule
+    potential_discharge_mwh = 0.0  # max theoretical PSP discharge (sum of all shortfalls)
+
     # ── PSP DISCHARGE SEGMENTS ─ build lookup: block → effective max discharge ──
     # Segments override per-block max_discharge. Blocks not covered use global max_discharge.
     discharge_cap_by_block: dict = {}  # block_number -> capped max discharge MW
@@ -111,10 +115,16 @@ def optimize_psp_dispatch(
         if generation_mw < min_schedule:
             shortfall = min_schedule - generation_mw
 
+            # Track the potential (unconstrained) discharge opportunity
+            potential_discharge_mwh += shortfall * 0.25
+
             # Available discharge power limited by remaining SoC
             available_discharge_mw = soc / (0.25 * discharge_loss_factor) if discharge_loss_factor > 0 else 0.0
 
-            psp_discharge = min(shortfall, effective_max_discharge, available_discharge_mw)
+            # What we would dispatch ignoring CERC 6MW rule
+            unconstrained_dispatch = min(shortfall, effective_max_discharge, available_discharge_mw)
+
+            psp_discharge = unconstrained_dispatch
 
             # ── CERC Min-Dispatch Compliance (6 MW rule) ──────────────────
             # PSP dispatch must be either 0 or >= min_dispatch_mw.
@@ -122,7 +132,13 @@ def optimize_psp_dispatch(
             # min_dispatch_mw (slight overdelivery is acceptable vs. a shortfall).
             # Re-cap against hardware and SOC limits after the bump.
             if 0 < psp_discharge < min_dispatch_mw:
-                psp_discharge = min(min_dispatch_mw, effective_max_discharge, available_discharge_mw)
+                bumped = min(min_dispatch_mw, effective_max_discharge, available_discharge_mw)
+                if bumped < min_dispatch_mw:
+                    # Cannot meet the 6 MW floor — forced to dispatch 0 (compliance waste)
+                    compliance_wasted_mwh += unconstrained_dispatch * 0.25
+                    psp_discharge = 0.0
+                else:
+                    psp_discharge = bumped
 
             if psp_discharge > 0:
                 soc_deduction = psp_discharge * 0.25 * discharge_loss_factor
@@ -185,6 +201,14 @@ def optimize_psp_dispatch(
     # ── DAILY SUMMARY ─────────────────────────────────────────────────────────
     compliant_blocks_count = sum(1 for b in block_results if b['compliant'])
     total_rtm_surplus_mwh = sum(b['rtm_surplus'] * 0.25 for b in block_results)
+    total_net_delivered_mwh = sum(b['net_schedule'] * 0.25 for b in block_results)
+    # Energy deficit for non-compliant blocks: sum of (floor - net_schedule) * 0.25h
+    # Use the raw gap directly (not gated on compliant flag, which has a 1e-4 tolerance)
+    shortfall_energy_mwh = sum(
+        max(0.0, b['min_schedule'] - b['net_schedule']) * 0.25
+        for b in block_results
+        if b['net_schedule'] < b['min_schedule'] - 1e-9
+    )
     psp_usable_charged_mwh = round(total_charged_mwh * (1.0 - roundtrip_loss_pct / 100.0), 2)
 
     summary = {
@@ -203,10 +227,15 @@ def optimize_psp_dispatch(
         "total_blocks":                 96,
         "fully_compliant":              compliant_blocks_count == 96,
         "total_rtm_surplus_mwh":        round(total_rtm_surplus_mwh, 2),
+        "total_net_delivered_mwh":       round(total_net_delivered_mwh, 2),
         # Carry-forward KPIs
         "initial_soc_mwh":              round(initial_soc, 2),
         "carry_forward_available_mwh":  round(total_carry_available, 2),
         "carry_forward_discharged_mwh": round(total_carry_discharged_mwh, 2),
+        # Power wastage KPIs
+        "compliance_wasted_mwh":        round(compliance_wasted_mwh, 2),
+        "potential_discharge_mwh":      round(potential_discharge_mwh, 2),
+        "shortfall_energy_mwh":         round(shortfall_energy_mwh, 2),
     }
 
     carry_forward = {
@@ -221,6 +250,30 @@ def optimize_psp_dispatch(
         "summary":       summary,
         "carry_forward": carry_forward,
     }
+
+
+def _count_psp_curtailed_blocks(psp_discharge_segments: list) -> int:
+    """
+    Count how many of the 96 blocks fall inside a PSP discharge segment
+    with maxDischargeMw == 0 (fully blocked).  These blocks cannot use PSP
+    to cover generation shortfalls, so they should be excluded from the
+    RTC compliance requirement in the binary search.
+
+    Segments are dicts produced by Pydantic model_dump() so keys are
+    camelCase: startBlock / endBlock / maxDischargeMw.
+    """
+    if not psp_discharge_segments:
+        return 0
+    curtailed = set()
+    for seg in psp_discharge_segments:
+        # Support both camelCase (from Pydantic model_dump) and snake_case
+        max_disch = seg.get('maxDischargeMw', seg.get('max_discharge_mw', 1))
+        start     = seg.get('startBlock',     seg.get('start_block',     None))
+        end       = seg.get('endBlock',       seg.get('end_block',       None))
+        if max_disch == 0 and start is not None and end is not None:
+            for b in range(int(start), int(end) + 1):
+                curtailed.add(b)
+    return len(curtailed)
 
 
 def find_max_rtc_no_shortfall(
@@ -238,34 +291,25 @@ def find_max_rtc_no_shortfall(
     psp_discharge_segments: list = None,
 ) -> float:
     """
-    Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
-    are compliant (net_schedule >= min_compliance_ratio * rtc_commitment) with
-    no shortfall at any block. This is Manikaran's Suggestion for 'recommended'.
+    Binary-search for the maximum RTC commitment (MW) such that all
+    non-PSP-curtailed blocks are compliant (net_schedule >=
+    min_compliance_ratio * rtc_commitment).  Blocks where PSP discharge is
+    fully curtailed (maxDischargeMw == 0) are excluded from the target count
+    because PSP cannot bridge their generation gap.  This is Manikaran's
+    Suggestion for 'recommended'.
 
-    Returns the highest RTC where fully_compliant == True.
+    Returns the highest RTC where all evaluable blocks are compliant.
     """
-    target_blocks = 96   # 100% compliance
+    # Blocks that are fully PSP-curtailed cannot be expected to be compliant
+    curtailed_block_count = _count_psp_curtailed_blocks(psp_discharge_segments)
+    target_blocks = 96 - curtailed_block_count   # only non-curtailed blocks must comply
 
-    # Sanity check at low
-    res_low = optimize_psp_dispatch(
-        forecast_df, rtc_commitment=low,
-        max_soc=max_soc,
-        max_charge=max_charge,
-        max_discharge=max_discharge,
-        initial_soc=initial_soc,
-        roundtrip_loss_pct=roundtrip_loss_pct,
-        min_compliance_ratio=min_compliance_ratio,
-        min_dispatch_mw=min_dispatch_mw,
-        psp_discharge_segments=psp_discharge_segments,
-    )
-    if res_low['summary']['compliant_blocks'] < target_blocks:
-        return 0.0
+    if target_blocks <= 0:
+        return 0.0   # everything is curtailed — no useful RTC to suggest
 
-    best_rtc = low
-    while (high - low) > tolerance:
-        mid = (low + high) / 2.0
+    def compliant_count(rtc: float) -> int:
         res = optimize_psp_dispatch(
-            forecast_df, rtc_commitment=mid,
+            forecast_df, rtc_commitment=rtc,
             max_soc=max_soc,
             max_charge=max_charge,
             max_discharge=max_discharge,
@@ -275,7 +319,16 @@ def find_max_rtc_no_shortfall(
             min_dispatch_mw=min_dispatch_mw,
             psp_discharge_segments=psp_discharge_segments,
         )
-        if res['summary']['compliant_blocks'] >= target_blocks:
+        return res['summary']['compliant_blocks']
+
+    # Sanity check at low — if even the lowest bound fails, return 0
+    if compliant_count(low) < target_blocks:
+        return 0.0
+
+    best_rtc = low
+    while (high - low) > tolerance:
+        mid = (low + high) / 2.0
+        if compliant_count(mid) >= target_blocks:
             best_rtc = mid
             low = mid
         else:
@@ -299,9 +352,21 @@ def find_max_rtc_multiday(
     psp_discharge_segments: list = None,
 ) -> float:
     """
-    Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
-    across ALL provided days are compliant, with SOC correctly chained between days.
+    Binary-search for the maximum RTC commitment (MW) such that all
+    non-PSP-curtailed blocks across ALL provided days are compliant,
+    with SOC correctly chained between days.
+
+    PSP-discharge-curtailed blocks (maxDischargeMw == 0) are excluded from
+    the compliance requirement — they cannot use PSP so should not penalise
+    the RTC recommendation.
     """
+    # Compute how many blocks per day are excluded due to full PSP curtailment
+    curtailed_block_count = _count_psp_curtailed_blocks(psp_discharge_segments)
+    target_blocks_per_day = 96 - curtailed_block_count
+
+    if target_blocks_per_day <= 0:
+        return 0.0
+
     def all_days_compliant(rtc: float) -> bool:
         soc = initial_soc
         for df in forecast_dfs:
@@ -317,7 +382,8 @@ def find_max_rtc_multiday(
                 min_dispatch_mw=min_dispatch_mw,
                 psp_discharge_segments=psp_discharge_segments,
             )
-            if not result['summary']['fully_compliant']:
+            # Pass if all evaluable (non-PSP-curtailed) blocks are compliant
+            if result['summary']['compliant_blocks'] < target_blocks_per_day:
                 return False
             soc = result['summary']['end_soc_mwh']
         return True
@@ -477,13 +543,14 @@ def calculate_rtc_range(
             "max_mw":    round(gen_max,    2),
         },
         "psp_discharge_headroom_mw": round(max_psp_per_block, 2),
+        "psp_curtailed_blocks":      _count_psp_curtailed_blocks(psp_discharge_segments),
         "min_rtc_mw":                min_rtc,
         "max_rtc_mw":                max_rtc,
         "recommended_rtc_mw":        recommended_rtc,
         "interpretation": {
             "min_rtc_basis":        f"{int(min_compliance_ratio*100)}% of P10 non-curtailment generation — safe floor commitment",
             "max_rtc_basis":        "P90 non-curtailment generation — achievable 90% of the time",
-            "recommended_basis":    "Max RTC with zero shortfall across all 96 blocks (dispatch-validated)",
+            "recommended_basis":    "Max RTC with zero shortfall across all operable (non-PSP-curtailed) blocks",
         }
     }
 
