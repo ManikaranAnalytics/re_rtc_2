@@ -621,89 +621,82 @@ export default function ConfigPage() {
             Plant &amp; Storage Parameters
           </h3>
 
-          {/* ─── Curtailment Segment Config ─── */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '10px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <span style={{ fontWeight: '700', color: '#fbbf24', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚡ Curtailment Segments</span>
-              <button
-                onClick={() => setCurtailmentEnabled(p => !p)}
-                style={{
-                  background: curtailmentEnabled ? 'rgba(251,191,36,0.2)' : 'rgba(100,116,139,0.15)',
-                  border: `1px solid ${curtailmentEnabled ? 'rgba(251,191,36,0.5)' : 'rgba(100,116,139,0.3)'}`,
-                  borderRadius: '20px', color: curtailmentEnabled ? '#fbbf24' : '#64748b',
-                  fontSize: '11px', padding: '4px 12px', cursor: 'pointer', fontWeight: '700',
-                }}
-              >
-                {curtailmentEnabled ? 'ACTIVE' : 'DISABLED'}
-              </button>
+          {/* ─── Curtailment + PSP Discharge side-by-side ─── */}
+
+          {/* Row 1: Charts side by side */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+
+            {/* ── Generation Curtailment card ── */}
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(251,191,36,0.2)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: '700', color: '#fbbf24', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>⚡ Generation Curtailment</span>
+                <button
+                  onClick={() => setCurtailmentEnabled(p => !p)}
+                  style={{
+                    background: curtailmentEnabled ? 'rgba(251,191,36,0.2)' : 'rgba(100,116,139,0.15)',
+                    border: `1px solid ${curtailmentEnabled ? 'rgba(251,191,36,0.5)' : 'rgba(100,116,139,0.3)'}`,
+                    borderRadius: '20px', color: curtailmentEnabled ? '#fbbf24' : '#64748b',
+                    fontSize: '11px', padding: '4px 12px', cursor: 'pointer', fontWeight: '700',
+                  }}
+                >
+                  {curtailmentEnabled ? 'ACTIVE' : 'DISABLED'}
+                </button>
+              </div>
+
+              {curtailmentEnabled ? (
+                <>
+                  {hasErrors && (
+                    <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px' }}>
+                      {errors.map((e, i) => (
+                        <div key={i} style={{ color: '#f87171', marginBottom: i < errors.length - 1 ? '4px' : 0 }}>⚠ {e}</div>
+                      ))}
+                    </div>
+                  )}
+                  <CurtailmentTimeline segments={curtailmentSegments} />
+                  <SegmentEditor
+                    segments={curtailmentSegments}
+                    onChange={segs => setCurtailmentSegments(segs)}
+                    overlappingIndices={overlappingIndices}
+                  />
+                  <CurtailmentStats segments={curtailmentSegments} />
+                </>
+              ) : (
+                <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '8px 0' }}>
+                  No curtailment — full generation all 96 blocks
+                </div>
+              )}
             </div>
 
-            {curtailmentEnabled ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {/* Validation errors */}
-                {hasErrors && (
-                  <div style={{
-                    background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)',
-                    borderRadius: '8px', padding: '10px 12px', fontSize: '12px',
-                  }}>
-                    {errors.map((e, i) => (
-                      <div key={i} style={{ color: '#f87171', marginBottom: i < errors.length - 1 ? '4px' : 0 }}>⚠ {e}</div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Visual timeline */}
-                <CurtailmentTimeline segments={curtailmentSegments} />
-
-                {/* Segment table editor */}
-                <SegmentEditor
-                  segments={curtailmentSegments}
-                  onChange={segs => setCurtailmentSegments(segs)}
-                  overlappingIndices={overlappingIndices}
-                />
-
-                {/* Summary stats */}
-                <CurtailmentStats segments={curtailmentSegments} />
+            {/* ── PSP Discharge Curtailment card ── */}
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: '700', color: '#a78bfa', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🔋 PSP Discharge Curtailment</span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  {pspDischargeSegments.length === 0 ? 'No restrictions' : `${pspDischargeSegments.length} segment(s)`}
+                </span>
               </div>
-            ) : (
-              <div style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', padding: '8px 0' }}>
-                No curtailment — full generation all 96 blocks
-              </div>
-            )}
-          </div>
 
-          {/* ─── PSP Discharge Curtailment Section ─── */}
-          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-              <span style={{ fontWeight: '700', color: '#a78bfa', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🔋 PSP Discharge Curtailment</span>
-              <span style={{ fontSize: '11px', color: '#64748b' }}>{pspDischargeSegments.length === 0 ? 'No restrictions — full discharge allowed' : `${pspDischargeSegments.length} segment(s) active`}</span>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Overlap warning */}
               {pspOverlaps.size > 0 && (
                 <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#f87171' }}>
                   ⚠ Discharge segments overlap — fix highlighted rows
                 </div>
               )}
 
-              {/* Visual timeline */}
               <PspDischargeTimeline segments={pspDischargeSegments} globalMax={maxDischargeMw} />
 
-              {/* Segment table editor */}
               <PspSegmentEditor
                 segments={pspDischargeSegments}
                 onChange={segs => setPspDischargeSegments(segs)}
                 overlappingIndices={pspOverlaps}
               />
 
-              {/* Summary stats */}
               <PspDischargeStats segments={pspDischargeSegments} />
 
-              <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.6' }}>
-                Restricting PSP discharge during specific blocks forces the optimizer to rely on direct generation only for those windows. Use this to model grid constraints, maintenance windows, or grid operator instructions.
+              <div style={{ fontSize: '11px', color: '#475569', lineHeight: '1.6' }}>
+                Restricting discharge forces the optimizer to rely on direct generation only for those windows.
               </div>
             </div>
+
           </div>
 
           {/* PSP Round-Trip Loss */}
