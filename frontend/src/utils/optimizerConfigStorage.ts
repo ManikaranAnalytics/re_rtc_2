@@ -8,7 +8,7 @@ import {
   PSP_SLIDER_MAX_DISCHARGE_MW,
   PSP_SLIDER_MAX_MIN_DISPATCH_MW,
 } from './constants';
-import type { CurtailmentSegment } from '../types';
+import type { CurtailmentSegment, PspDischargeSegment } from '../types';
 
 const STORAGE_KEY = 'hindalco-optimizer-config';
 
@@ -31,6 +31,8 @@ export interface PersistedOptimizerConfig {
   carryFromDate: string | null;
   prevDayChargeSchedule: number[] | null;
   blockOverrides: Record<number, { wind_mw: string; solar_mw: string }>;
+  // PSP Discharge Curtailment segments
+  pspDischargeSegments: PspDischargeSegment[];
 }
 
 export const DEFAULT_OPTIMIZER_CONFIG: PersistedOptimizerConfig = {
@@ -51,6 +53,7 @@ export const DEFAULT_OPTIMIZER_CONFIG: PersistedOptimizerConfig = {
   carryFromDate: null,
   prevDayChargeSchedule: null,
   blockOverrides: {},
+  pspDischargeSegments: [],
 };
 
 function clamp(n: number, min: number, max: number): number {
@@ -121,6 +124,25 @@ function sanitize(raw: Record<string, unknown>): PersistedOptimizerConfig {
     curtailmentSegments = [{ startBlock: legacyStart, endBlock: legacyEnd, maxMw: 0 }];
   }
 
+  // -- PSP Discharge Segments ---------------------------------------------------
+  let pspDischargeSegments: PspDischargeSegment[] = [];
+  if (Array.isArray(raw.pspDischargeSegments)) {
+    pspDischargeSegments = (raw.pspDischargeSegments as unknown[]).reduce<PspDischargeSegment[]>((acc, item) => {
+      if (
+        typeof item === 'object' && item !== null &&
+        typeof (item as Record<string, unknown>).startBlock === 'number' &&
+        typeof (item as Record<string, unknown>).endBlock   === 'number' &&
+        typeof (item as Record<string, unknown>).maxDischargeMw === 'number'
+      ) {
+        const seg = item as Record<string, number>;
+        if (seg.endBlock > seg.startBlock && seg.maxDischargeMw >= 0) {
+          acc.push({ startBlock: seg.startBlock, endBlock: seg.endBlock, maxDischargeMw: seg.maxDischargeMw });
+        }
+      }
+      return acc;
+    }, []);
+  }
+
   return {
     selectedDate: date,
     wtgCount: clamp(typeof raw.wtgCount === 'number' ? raw.wtgCount : d.wtgCount, 1, 59),
@@ -139,6 +161,7 @@ function sanitize(raw: Record<string, unknown>): PersistedOptimizerConfig {
     carryFromDate,
     prevDayChargeSchedule,
     blockOverrides,
+    pspDischargeSegments,
   };
 }
 

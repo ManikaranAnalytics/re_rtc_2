@@ -20,6 +20,7 @@ export default function MultiDayAnalysis() {
     curtailmentEnabled, curtailmentStart, curtailmentEnd,
     curtailmentSegments,
     roundtripLoss,
+    pspDischargeSegments,
   } = useOptimizer();
 
   const {
@@ -96,6 +97,7 @@ export default function MultiDayAnalysis() {
             min_dispatch_mw: minDispatchMw,
             initial_soc_mwh: currentSocMwh,
             prev_day_charge_schedule: prevChargeSchedule,
+            psp_discharge_segments: pspDischargeSegments.length > 0 ? pspDischargeSegments : null,
           })
         });
 
@@ -131,6 +133,7 @@ export default function MultiDayAnalysis() {
               max_discharge_mw: maxDischargeMw,
               min_dispatch_mw: minDispatchMw,
               initial_soc_mwh: 0,
+              psp_discharge_segments: pspDischargeSegments.length > 0 ? pspDischargeSegments : null,
             })
           });
           if (optRes.ok) {

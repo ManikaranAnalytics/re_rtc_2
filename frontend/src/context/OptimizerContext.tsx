@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type {
   ScheduleResponse, RTCRangeData, RawForecastRow, GenEdit, BlockData, SummaryData,
-  CurtailmentSegment,
+  CurtailmentSegment, PspDischargeSegment,
 } from '../types';
 import { BASE_URL, JUNE_DATES } from '../utils/constants';
 import {
@@ -40,6 +40,10 @@ interface OptimizerContextValue {
   // Legacy kept for backward compat (generation table curtail_flag overlay)
   curtailmentStart: number;
   curtailmentEnd: number;
+
+  // PSP Discharge Curtailment
+  pspDischargeSegments: PspDischargeSegment[];
+  setPspDischargeSegments: React.Dispatch<React.SetStateAction<PspDischargeSegment[]>>;
 
   // PSP
   roundtripLoss: number;
@@ -122,6 +126,9 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   const curtailmentStart = curtailmentSegments.length > 0 ? curtailmentSegments[0].startBlock : 37;
   const curtailmentEnd   = curtailmentSegments.length > 0 ? curtailmentSegments[0].endBlock   : 64;
 
+  // PSP Discharge Curtailment
+  const [pspDischargeSegments, setPspDischargeSegments] = useState<PspDischargeSegment[]>(savedConfig.pspDischargeSegments);
+
   // PSP loss %
   const [roundtripLoss, setRoundtripLoss] = useState(savedConfig.roundtripLoss);
 
@@ -169,6 +176,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
       carryFromDate,
       prevDayChargeSchedule,
       blockOverrides,
+      pspDischargeSegments,
     };
     saveOptimizerConfig(config);
     return config;
@@ -177,6 +185,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw,
     curtailmentEnabled, curtailmentSegments, roundtripLoss,
     initialSocMwh, carryFromDate, prevDayChargeSchedule, blockOverrides,
+    pspDischargeSegments,
   ]);
 
   useEffect(() => {
@@ -263,6 +272,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             block_overrides: buildOverridesList(),
             initial_soc_mwh: initialSocMwh,
             prev_day_charge_schedule: prevDayChargeSchedule,
+            psp_discharge_segments: pspDischargeSegments.length > 0 ? pspDischargeSegments : null,
           })
         });
         if (!response.ok) {
@@ -300,7 +310,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
 
     const handler = setTimeout(() => { fetchSchedule(); }, 150);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, prevDayChargeSchedule, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, rtcCommitment, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, prevDayChargeSchedule, pspDischargeSegments, buildOverridesList]);
 
   // ── Roll to next day ──
   const handleRollToNextDay = useCallback(() => {
@@ -344,6 +354,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             min_dispatch_mw: minDispatchMw,
             initial_soc_mwh: initialSocMwh,
             block_overrides: buildOverridesList(),
+            psp_discharge_segments: pspDischargeSegments.length > 0 ? pspDischargeSegments : null,
           })
         });
         if (response.ok) {
@@ -358,7 +369,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     };
     const handler = setTimeout(fetchRange, 300);
     return () => clearTimeout(handler);
-  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, buildOverridesList]);
+  }, [selectedDate, wtgCount, solarAc, curtailmentEnabled, curtailmentSegments, roundtripLoss, maxSocMwh, maxChargeMw, maxDischargeMw, minDispatchMw, initialSocMwh, pspDischargeSegments, buildOverridesList]);
 
   // ── Fetch raw forecast ──
   useEffect(() => {
@@ -407,6 +418,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     curtailmentSegments, setCurtailmentSegments,
     curtailmentStart,
     curtailmentEnd,
+    pspDischargeSegments, setPspDischargeSegments,
     roundtripLoss, setRoundtripLoss,
     sideTab, setSideTab,
     blockOverrides, setBlockOverrides,

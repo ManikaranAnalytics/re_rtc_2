@@ -4,6 +4,12 @@ export interface CurtailmentSegment {
   maxMw: number;
 }
 
+export interface PspDischargeSegment {
+  startBlock: number;
+  endBlock: number;
+  maxDischargeMw: number; // 0 = no discharge allowed; >0 = discharge cap
+}
+
 export interface BlockData {
   block: number;
   time: string;

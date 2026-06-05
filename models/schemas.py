@@ -37,6 +37,26 @@ class CurtailmentSegment(BaseModel):
         return self
 
 
+# ── PSP Discharge Segment ────────────────────────────────────────────────────
+
+class PspDischargeSegment(BaseModel):
+    """A block-range cap on PSP discharge output.
+
+    maxDischargeMw == 0  → PSP discharge fully blocked in this window.
+    maxDischargeMw  > 0  → PSP discharge capped to this MW value.
+    Blocks not covered by any segment use the global max_discharge_mw.
+    """
+    startBlock:      int   = Field(..., ge=1, le=96, description="First restricted block (inclusive)")
+    endBlock:        int   = Field(..., ge=1, le=96, description="Last restricted block (inclusive)")
+    maxDischargeMw:  float = Field(0.0, ge=0.0, description="PSP discharge cap in MW (0 = blocked)")
+
+    @model_validator(mode='after')
+    def end_after_start(self) -> 'PspDischargeSegment':
+        if self.endBlock <= self.startBlock:
+            raise ValueError(f"endBlock ({self.endBlock}) must be > startBlock ({self.startBlock})")
+        return self
+
+
 # ── Request / Config Schemas ──────────────────────────────────────────────────
 
 class ScheduleRequest(BaseModel):
@@ -45,9 +65,6 @@ class ScheduleRequest(BaseModel):
     solar_ac_mw: float = Field(50.0, ge=5.0, le=175.0, description="Solar AC capacity in MW")
     rtc_commitment_mw: float = Field(50.0, ge=1.0, le=300.0, description="Daily RTC commitment target in MW")
     # Curtailment config — new segment-based system
-    # Provide curtailment_segments to use the full MW-cap system.
-    # If omitted, the legacy curtailment_start_block / curtailment_end_block fields
-    # are used to auto-build a single full-curtailment segment (backward compat).
     curtailment_segments: Optional[List[CurtailmentSegment]] = Field(
         None, description="Segment-based curtailment windows with per-segment MW caps. "
                           "When provided, overrides curtailment_start/end_block."
@@ -56,6 +73,10 @@ class ScheduleRequest(BaseModel):
     curtailment_enabled: bool = Field(True, description="Whether curtailment window is active (legacy; ignored when curtailment_segments is set)")
     curtailment_start_block: int = Field(37, ge=1, le=96, description="First curtailed block — legacy, used only when curtailment_segments is absent")
     curtailment_end_block: int = Field(64, ge=1, le=96, description="Last curtailed block — legacy, used only when curtailment_segments is absent")
+    # PSP Discharge Curtailment — block-level discharge limits
+    psp_discharge_segments: Optional[List[PspDischargeSegment]] = Field(
+        None, description="Block-range caps on PSP discharge. 0 MW = fully blocked; >0 = partial cap."
+    )
     # PSP config
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0, description="PSP round-trip loss % (e.g. 20 = 20% loss)")
     min_compliance_ratio: float = Field(0.50, ge=0.5, le=1.0, description="Min delivery as fraction of RTC (0.50 = 50%)")
@@ -139,6 +160,7 @@ class MaxRTCRequest(BaseModel):
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)
+    psp_discharge_segments: Optional[List[PspDischargeSegment]] = Field(None)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.50, ge=0.5, le=1.0)
     initial_soc_mwh: float = Field(0.0, ge=0.0, le=_PSP_MAX, description="SoC at start of day (MWh) — used in dispatch simulation")
@@ -180,6 +202,7 @@ class RTCRangeRequest(BaseModel):
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)
+    psp_discharge_segments: Optional[List[PspDischargeSegment]] = Field(None)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.50, ge=0.5, le=1.0)
     max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX)
@@ -216,6 +239,7 @@ class MultiDayMaxRTCRequest(BaseModel):
     curtailment_enabled: bool = Field(True)
     curtailment_start_block: int = Field(37, ge=1, le=96)
     curtailment_end_block: int = Field(64, ge=1, le=96)
+    psp_discharge_segments: Optional[List[PspDischargeSegment]] = Field(None)
     roundtrip_loss_pct: float = Field(20.0, ge=0.0, le=50.0)
     min_compliance_ratio: float = Field(0.50, ge=0.5, le=1.0)
     max_soc_mwh: float = Field(_PSP_DEFAULT, ge=_PSP_MIN, le=_PSP_MAX)

@@ -51,15 +51,17 @@ def _psp_params(request) -> dict:
 
 
 def _resolve_segments(request) -> list | None:
-    """Extract the curtailment segments list from any request schema.
-
-    If the request carries an explicit curtailment_segments array, return it as
-    plain dicts so forecast.py can iterate without Pydantic model overhead.
-    If not present, return None so forecast.py applies its own backward-compat
-    logic (building a single full-curtailment segment from start/end block fields).
-    """
+    """Extract the curtailment segments list from any request schema."""
     segs = getattr(request, 'curtailment_segments', None)
     if segs is None:
+        return None
+    return [s.model_dump() if hasattr(s, 'model_dump') else dict(s) for s in segs]
+
+
+def _resolve_psp_discharge_segments(request) -> list | None:
+    """Extract PSP discharge segments from any request schema."""
+    segs = getattr(request, 'psp_discharge_segments', None)
+    if not segs:
         return None
     return [s.model_dump() if hasattr(s, 'model_dump') else dict(s) for s in segs]
 
@@ -92,6 +94,7 @@ def get_optimal_schedule(request: ScheduleRequest):
             rtc_commitment=request.rtc_commitment_mw,
             initial_soc=request.initial_soc_mwh,
             prev_day_charge_schedule=request.prev_day_charge_schedule,
+            psp_discharge_segments=_resolve_psp_discharge_segments(request),
             **_psp_params(request),
         )
 
@@ -118,9 +121,11 @@ def get_max_possible_rtc(request: MaxRTCRequest):
         )
 
         psp = _psp_params(request)
+        psp_dis_segs = _resolve_psp_discharge_segments(request)
         max_rtc = find_max_rtc_no_shortfall(
             forecast_df=forecast_df,
             initial_soc=request.initial_soc_mwh,
+            psp_discharge_segments=psp_dis_segs,
             **psp,
         )
 
@@ -128,6 +133,7 @@ def get_max_possible_rtc(request: MaxRTCRequest):
             forecast_df=forecast_df,
             rtc_commitment=max_rtc,
             initial_soc=request.initial_soc_mwh,
+            psp_discharge_segments=psp_dis_segs,
             **psp,
         )
 
@@ -167,6 +173,7 @@ def get_rtc_range(request: RTCRangeRequest):
         result = calculate_rtc_range(
             forecast_df=forecast_df,
             initial_soc=request.initial_soc_mwh,
+            psp_discharge_segments=_resolve_psp_discharge_segments(request),
             **psp,
         )
         return result
@@ -215,6 +222,7 @@ def get_multi_day_max_rtc(request: MultiDayMaxRTCRequest):
             initial_soc=request.initial_soc_mwh,
             low=0.0,
             high=search_high,
+            psp_discharge_segments=_resolve_psp_discharge_segments(request),
             **_psp_params(request),
         )
 

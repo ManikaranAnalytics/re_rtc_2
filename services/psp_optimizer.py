@@ -14,6 +14,7 @@ def optimize_psp_dispatch(
     min_compliance_ratio: float = 0.50,  # 50% of RTC is the regulatory floor
     min_dispatch_mw: float = 6.0,        # Minimum PSP charge/discharge (MW) — CERC compliance
     prev_day_charge_schedule: list = None,  # kept for API compatibility; no longer used
+    psp_discharge_segments: list = None,    # [{startBlock, endBlock, maxDischargeMw}, ...]
 ) -> dict:
     """
     Simulates PSP charging/discharging sequentially over 96 blocks.
@@ -71,6 +72,15 @@ def optimize_psp_dispatch(
     total_carry_expired_mwh = 0.0
     today_charge_schedule = []   # track today's charges for handoff to next day
 
+    # ── PSP DISCHARGE SEGMENTS ─ build lookup: block → effective max discharge ──
+    # Segments override per-block max_discharge. Blocks not covered use global max_discharge.
+    discharge_cap_by_block: dict = {}  # block_number -> capped max discharge MW
+    if psp_discharge_segments:
+        for seg in psp_discharge_segments:
+            cap = float(seg.get('maxDischargeMw', max_discharge))
+            for b in range(int(seg['startBlock']), int(seg['endBlock']) + 1):
+                discharge_cap_by_block[b] = min(max_discharge, cap)
+
     block_results = []
 
     for i, (_, row) in enumerate(forecast_df.iterrows()):
@@ -83,6 +93,9 @@ def optimize_psp_dispatch(
         # generation_mw now reflects combined MW cap from curtailment segment (not hard zero)
         # PSP discharge gap = max(0, min_schedule - generation_mw)
         generation_mw = wind_mw + solar_mw
+
+        # Effective per-block discharge cap (from segment config or global max)
+        effective_max_discharge = discharge_cap_by_block.get(block, max_discharge)
 
         psp_charge = 0.0
         psp_discharge = 0.0
@@ -101,7 +114,7 @@ def optimize_psp_dispatch(
             # Available discharge power limited by remaining SoC
             available_discharge_mw = soc / (0.25 * discharge_loss_factor) if discharge_loss_factor > 0 else 0.0
 
-            psp_discharge = min(shortfall, max_discharge, available_discharge_mw)
+            psp_discharge = min(shortfall, effective_max_discharge, available_discharge_mw)
 
             # ── CERC Min-Dispatch Compliance (6 MW rule) ──────────────────
             # PSP dispatch must be either 0 or >= min_dispatch_mw.
@@ -109,7 +122,7 @@ def optimize_psp_dispatch(
             # min_dispatch_mw (slight overdelivery is acceptable vs. a shortfall).
             # Re-cap against hardware and SOC limits after the bump.
             if 0 < psp_discharge < min_dispatch_mw:
-                psp_discharge = min(min_dispatch_mw, max_discharge, available_discharge_mw)
+                psp_discharge = min(min_dispatch_mw, effective_max_discharge, available_discharge_mw)
 
             if psp_discharge > 0:
                 soc_deduction = psp_discharge * 0.25 * discharge_loss_factor
@@ -222,6 +235,7 @@ def find_max_rtc_no_shortfall(
     max_charge: float = 60.0,
     max_discharge: float = 50.0,
     initial_soc: float = 0.0,
+    psp_discharge_segments: list = None,
 ) -> float:
     """
     Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
@@ -242,6 +256,7 @@ def find_max_rtc_no_shortfall(
         roundtrip_loss_pct=roundtrip_loss_pct,
         min_compliance_ratio=min_compliance_ratio,
         min_dispatch_mw=min_dispatch_mw,
+        psp_discharge_segments=psp_discharge_segments,
     )
     if res_low['summary']['compliant_blocks'] < target_blocks:
         return 0.0
@@ -258,6 +273,7 @@ def find_max_rtc_no_shortfall(
             roundtrip_loss_pct=roundtrip_loss_pct,
             min_compliance_ratio=min_compliance_ratio,
             min_dispatch_mw=min_dispatch_mw,
+            psp_discharge_segments=psp_discharge_segments,
         )
         if res['summary']['compliant_blocks'] >= target_blocks:
             best_rtc = mid
@@ -280,24 +296,11 @@ def find_max_rtc_multiday(
     low: float = 0.0,
     high: float = 300.0,
     tolerance: float = 0.05,
+    psp_discharge_segments: list = None,
 ) -> float:
     """
     Binary-search for the maximum RTC commitment (MW) such that ALL 96 blocks
     across ALL provided days are compliant, with SOC correctly chained between days.
-
-    This is a true multi-day optimization — independent of whatever RTC the user
-    currently has selected. It starts from initial_soc (default 0) and lets the
-    SOC evolve naturally day-over-day for each candidate RTC.
-
-    Parameters:
-      - forecast_dfs    : List of per-day DataFrames (one per date, in order)
-      - roundtrip_loss_pct, min_compliance_ratio, min_dispatch_mw, max_soc: PSP config
-      - initial_soc     : Starting SoC for day 1 (default 0 = clean slate)
-      - low / high      : Binary search bounds in MW
-      - tolerance       : Convergence threshold in MW
-
-    Returns:
-      Highest RTC (MW, rounded to 2dp) where every block on every day is compliant.
     """
     def all_days_compliant(rtc: float) -> bool:
         soc = initial_soc
@@ -312,13 +315,13 @@ def find_max_rtc_multiday(
                 roundtrip_loss_pct=roundtrip_loss_pct,
                 min_compliance_ratio=min_compliance_ratio,
                 min_dispatch_mw=min_dispatch_mw,
+                psp_discharge_segments=psp_discharge_segments,
             )
             if not result['summary']['fully_compliant']:
                 return False
             soc = result['summary']['end_soc_mwh']
         return True
 
-    # Sanity check: if even low is not achievable, return 0
     if not all_days_compliant(low):
         return 0.0
 
@@ -343,6 +346,7 @@ def calculate_rtc_range(
     min_compliance_ratio: float = 0.50,
     min_dispatch_mw: float = 6.0,
     initial_soc: float = 0.0,
+    psp_discharge_segments: list = None,
 ) -> dict:
     """
     Calculates the min, recommended (Manikaran's Suggestion), and max committable RTC
@@ -431,6 +435,7 @@ def calculate_rtc_range(
         initial_soc=initial_soc,
         low=0.0,
         high=gen_p90 + max_psp_per_block,
+        psp_discharge_segments=psp_discharge_segments,
     )
 
     # -- Curtailment loss reporting -------------------------------------------

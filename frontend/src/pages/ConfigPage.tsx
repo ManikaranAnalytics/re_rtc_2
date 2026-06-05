@@ -3,7 +3,7 @@ import { Line } from 'react-chartjs-2';
 import '../utils/chartSetup';
 import { Settings2, Plus, Trash2 } from 'lucide-react';
 import { useOptimizer } from '../context/OptimizerContext';
-import type { CurtailmentSegment } from '../types';
+import type { CurtailmentSegment, PspDischargeSegment } from '../types';
 import {
   PSP_MAX_CAPACITY_MWH,
   PSP_SLIDER_MAX_CHARGE_MW,
@@ -176,6 +176,244 @@ function CurtailmentTimeline({ segments }: { segments: CurtailmentSegment[] }) {
   );
 }
 
+/* ── PSP Discharge Timeline Chart ── */
+
+function PspDischargeTimeline({ segments, globalMax }: { segments: PspDischargeSegment[]; globalMax: number }) {
+  const blockNums = Array.from({ length: 96 }, (_, i) => i + 1);
+  const yMax = Math.max(globalMax * 1.3, 20);
+
+  const getInfo = (b: number) => {
+    const seg = segments.find(s => s.startBlock <= b && b <= s.endBlock);
+    if (!seg) return { value: yMax,         border: 'rgba(22,101,52,0.9)',   bg: 'rgba(22,101,52,0.10)' };
+    if (seg.maxDischargeMw === 0)
+      return { value: 0,               border: '#7c3aed',                bg: 'rgba(124,58,237,0.16)' };
+    return { value: seg.maxDischargeMw,  border: '#6366f1',                bg: 'rgba(99,102,241,0.14)' };
+  };
+
+  const infos = useMemo(() => blockNums.map(b => getInfo(b)), [segments, globalMax]);
+
+  const labels = useMemo(() => blockNums.map(b => {
+    const min = (b - 1) * 15;
+    const hh  = String(Math.floor(min / 60)).padStart(2, '0');
+    const mm  = String(min % 60).padStart(2, '0');
+    return (b - 1) % 4 === 0 ? `${hh}:${mm}` : '';
+  }), []);
+
+  const chartData = useMemo(() => ({
+    labels,
+    datasets: [{
+      label: 'PSP Discharge Cap per Block',
+      data: infos.map(i => i.value),
+      pointBackgroundColor: infos.map(i => i.border),
+      pointBorderColor:     infos.map(i => i.border),
+      pointRadius: infos.map((_, idx) => {
+        const prev = idx > 0 ? infos[idx - 1] : null;
+        const next = idx < infos.length - 1 ? infos[idx + 1] : null;
+        const changed = (prev && prev.border !== infos[idx].border) ||
+                        (next && next.border !== infos[idx].border);
+        return changed ? 4 : 0;
+      }),
+      pointHoverRadius: 5,
+      borderWidth: 2.5,
+      fill: true,
+      tension: 0,
+      spanGaps: true,
+      segment: {
+        borderColor:     (ctx: any) => infos[ctx.p0DataIndex]?.border ?? '#94a3b8',
+        backgroundColor: (ctx: any) => infos[ctx.p0DataIndex]?.bg    ?? 'transparent',
+      },
+    }],
+  }), [infos, labels]);
+
+  const chartOptions = useMemo(() => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 250 } as const,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'bottom' as const,
+        labels: {
+          generateLabels: () => [
+            { text: 'Fully blocked (0 MW)',    fillStyle: '#7c3aed',             strokeStyle: '#7c3aed',             lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+            { text: 'Partial cap (MW > 0)',    fillStyle: '#6366f1',             strokeStyle: '#6366f1',             lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+            { text: 'Unrestricted',            fillStyle: 'rgba(22,101,52,0.7)', strokeStyle: 'rgba(22,101,52,0.9)', lineWidth: 2, pointStyle: 'rectRounded' as const, fontColor: '#94a3b8' },
+          ],
+          color: '#94a3b8',
+          font: { family: 'Outfit', size: 11 },
+          boxWidth: 12,
+          padding: 14,
+          usePointStyle: true,
+        },
+      },
+      tooltip: {
+        mode: 'index' as const,
+        intersect: false,
+        backgroundColor: 'rgba(13,20,38,0.95)',
+        titleColor: '#f8fafc',
+        bodyColor:  '#e2e8f0',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderWidth: 1,
+        padding: 10,
+        callbacks: {
+          title: (items: any[]) => {
+            const idx = items[0]?.dataIndex ?? 0;
+            const b   = idx + 1;
+            const min = idx * 15;
+            const hh  = String(Math.floor(min / 60)).padStart(2, '0');
+            const mm  = String(min % 60).padStart(2, '0');
+            return `Block ${b}  —  ${hh}:${mm}`;
+          },
+          label: (item: any) => {
+            const info = infos[item.dataIndex];
+            if (!info) return '';
+            if (info.border.startsWith('rgba(22,101')) return '  ✓ Unrestricted (global cap)';
+            if (item.raw === 0)                         return '  ✗ Fully blocked (0 MW)';
+            return `  ⚡ Capped at: ${item.raw} MW`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: {
+        grid:  { color: 'rgba(255,255,255,0.03)' },
+        ticks: { color: '#64748b', font: { family: 'Outfit', size: 9 }, maxRotation: 0, autoSkip: false },
+      },
+      y: {
+        min: 0,
+        max: yMax,
+        grid:  { color: 'rgba(255,255,255,0.04)' },
+        ticks: { color: '#94a3b8', font: { family: 'Outfit', size: 10 } },
+        title: { display: true, text: 'Discharge Cap (MW)', color: '#64748b', font: { family: 'Outfit', size: 11 } },
+      },
+    },
+  }), [infos, yMax]);
+
+  return (
+    <div style={{ height: '220px', position: 'relative' }}>
+      <Line data={chartData as any} options={chartOptions as any} />
+    </div>
+  );
+}
+
+/* ── PSP Discharge Segment Editor Table ── */
+
+interface PspSegmentEditorProps {
+  segments: PspDischargeSegment[];
+  onChange: (segs: PspDischargeSegment[]) => void;
+  overlappingIndices: Set<number>;
+}
+
+function PspSegmentEditor({ segments, onChange, overlappingIndices }: PspSegmentEditorProps) {
+  const update = (i: number, patch: Partial<PspDischargeSegment>) => {
+    const next = segments.map((s, idx) => idx === i ? { ...s, ...patch } : s);
+    onChange(next);
+  };
+  const remove = (i: number) => onChange(segments.filter((_, idx) => idx !== i));
+  const add = () => onChange([...segments, { startBlock: 1, endBlock: 2, maxDischargeMw: 0 }]);
+
+  const inputStyle = (invalid: boolean): React.CSSProperties => ({
+    width: '100%',
+    background: '#0a1020',
+    border: `1px solid ${invalid ? 'rgba(239,68,68,0.6)' : 'rgba(139,92,246,0.3)'}`,
+    borderRadius: '6px',
+    color: invalid ? '#f87171' : '#a78bfa',
+    padding: '7px 8px',
+    fontSize: '13px',
+    fontFamily: 'var(--font-mono)',
+    textAlign: 'center',
+  });
+
+  return (
+    <div>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+              {['Start Block', 'End Block', 'Time Range', 'Max Discharge MW (0 = blocked)', ''].map(h => (
+                <th key={h} style={{ padding: '8px 10px', textAlign: 'left', color: '#64748b', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {segments.map((seg, i) => {
+              const isOverlap = overlappingIndices.has(i);
+              const endInvalid = seg.endBlock <= seg.startBlock;
+              const mwInvalid = seg.maxDischargeMw < 0;
+              return (
+                <tr key={i} style={{
+                  background: isOverlap ? 'rgba(239,68,68,0.07)' : 'transparent',
+                  borderBottom: '1px solid rgba(255,255,255,0.04)',
+                  transition: 'background 0.2s',
+                }}>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input type="number" min={1} max={96}
+                      value={seg.startBlock}
+                      onChange={e => update(i, { startBlock: parseInt(e.target.value) || 1 })}
+                      style={inputStyle(isOverlap || endInvalid)} />
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input type="number" min={1} max={96}
+                      value={seg.endBlock}
+                      onChange={e => update(i, { endBlock: parseInt(e.target.value) || 2 })}
+                      style={inputStyle(isOverlap || endInvalid)} />
+                  </td>
+                  <td style={{ padding: '6px 10px', color: '#94a3b8', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
+                    {blockToTime(seg.startBlock)} – {blockToTime(seg.endBlock)}
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <input type="number" min={0} step={0.5}
+                      value={seg.maxDischargeMw}
+                      onChange={e => update(i, { maxDischargeMw: parseFloat(e.target.value) || 0 })}
+                      style={{ ...inputStyle(mwInvalid), color: seg.maxDischargeMw === 0 ? '#a78bfa' : '#818cf8' }} />
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <button onClick={() => remove(i)} title="Remove segment"
+                      style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '6px', color: '#f87171', padding: '5px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <button onClick={add}
+        style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(139,92,246,0.1)', border: '1px solid rgba(139,92,246,0.35)', borderRadius: '8px', color: '#a78bfa', fontSize: '13px', padding: '7px 14px', cursor: 'pointer', fontWeight: 600, transition: 'background 0.15s' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(139,92,246,0.2)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(139,92,246,0.1)')}>
+        <Plus size={14} /> Add Discharge Restriction
+      </button>
+      <div style={{ marginTop: '8px', fontSize: '11px', color: '#475569' }}>Uncovered blocks use the global Max Injection (Discharge) limit above.</div>
+    </div>
+  );
+}
+
+/* ── PSP Discharge Stats ── */
+
+function PspDischargeStats({ segments }: { segments: PspDischargeSegment[] }) {
+  const blockedBlocks = segments.filter(s => s.maxDischargeMw === 0)
+    .reduce((acc, s) => acc + (s.endBlock - s.startBlock + 1), 0);
+  const cappedBlocks = segments.filter(s => s.maxDischargeMw > 0)
+    .reduce((acc, s) => acc + (s.endBlock - s.startBlock + 1), 0);
+  const cards = [
+    { label: 'Fully Blocked Blocks', value: blockedBlocks.toString(), color: '#a78bfa', bg: 'rgba(139,92,246,0.08)' },
+    { label: 'Partial Cap Blocks', value: cappedBlocks.toString(), color: '#818cf8', bg: 'rgba(99,102,241,0.08)' },
+    { label: 'Unrestricted Blocks', value: (96 - blockedBlocks - cappedBlocks).toString(), color: '#34d399', bg: 'rgba(16,185,129,0.08)' },
+  ];
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
+      {cards.map(c => (
+        <div key={c.label} style={{ background: c.bg, border: `1px solid ${c.color}30`, borderRadius: '10px', padding: '12px 14px' }}>
+          <div style={{ fontSize: '20px', fontWeight: 700, color: c.color, fontFamily: 'var(--font-mono)' }}>{c.value}</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>{c.label}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Segment Editor Table ── */
 
 interface SegmentEditorProps {
@@ -343,11 +581,26 @@ export default function ConfigPage() {
     roundtripLoss, setRoundtripLoss,
     carryFromDate, initialSocMwh,
     handleClearCarry,
+    pspDischargeSegments, setPspDischargeSegments,
   } = useOptimizer();
 
   const errors = useMemo(() => validateSegments(curtailmentSegments), [curtailmentSegments]);
   const overlappingIndices = useMemo(() => detectOverlaps(curtailmentSegments), [curtailmentSegments]);
   const hasErrors = errors.length > 0;
+
+  // PSP discharge segment validation
+  const detectPspOverlaps = (segs: typeof pspDischargeSegments): Set<number> => {
+    const overlapping = new Set<number>();
+    for (let i = 0; i < segs.length; i++) {
+      for (let j = i + 1; j < segs.length; j++) {
+        if (segs[i].startBlock <= segs[j].endBlock && segs[j].startBlock <= segs[i].endBlock) {
+          overlapping.add(i); overlapping.add(j);
+        }
+      }
+    }
+    return overlapping;
+  };
+  const pspOverlaps = useMemo(() => detectPspOverlaps(pspDischargeSegments), [pspDischargeSegments]);
 
   return (
     <div className="config-page">
@@ -417,6 +670,40 @@ export default function ConfigPage() {
                 No curtailment — full generation all 96 blocks
               </div>
             )}
+          </div>
+
+          {/* ─── PSP Discharge Curtailment Section ─── */}
+          <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: '10px', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+              <span style={{ fontWeight: '700', color: '#a78bfa', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>🔋 PSP Discharge Curtailment</span>
+              <span style={{ fontSize: '11px', color: '#64748b' }}>{pspDischargeSegments.length === 0 ? 'No restrictions — full discharge allowed' : `${pspDischargeSegments.length} segment(s) active`}</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Overlap warning */}
+              {pspOverlaps.size > 0 && (
+                <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '10px 12px', fontSize: '12px', color: '#f87171' }}>
+                  ⚠ Discharge segments overlap — fix highlighted rows
+                </div>
+              )}
+
+              {/* Visual timeline */}
+              <PspDischargeTimeline segments={pspDischargeSegments} globalMax={maxDischargeMw} />
+
+              {/* Segment table editor */}
+              <PspSegmentEditor
+                segments={pspDischargeSegments}
+                onChange={segs => setPspDischargeSegments(segs)}
+                overlappingIndices={pspOverlaps}
+              />
+
+              {/* Summary stats */}
+              <PspDischargeStats segments={pspDischargeSegments} />
+
+              <div style={{ fontSize: '12px', color: '#64748b', lineHeight: '1.6' }}>
+                Restricting PSP discharge during specific blocks forces the optimizer to rely on direct generation only for those windows. Use this to model grid constraints, maintenance windows, or grid operator instructions.
+              </div>
+            </div>
           </div>
 
           {/* PSP Round-Trip Loss */}
