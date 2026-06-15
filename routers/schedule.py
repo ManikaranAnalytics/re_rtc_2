@@ -94,6 +94,8 @@ def get_optimal_schedule(request: ScheduleRequest):
             rtc_commitment=request.rtc_commitment_mw,
             initial_soc=request.initial_soc_mwh,
             prev_day_charge_schedule=request.prev_day_charge_schedule,
+            prev_charge_lots=request.prev_charge_lots,
+            global_block_offset=request.global_block_offset,
             psp_discharge_segments=_resolve_psp_discharge_segments(request),
             **_psp_params(request),
         )

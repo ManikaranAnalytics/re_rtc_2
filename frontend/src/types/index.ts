@@ -27,6 +27,10 @@ export interface BlockData {
   curtail_flag: boolean;
   carry_budget_mwh: number;
   carry_discharge_mw: number;
+  charge_window_charged_mwh?: number;
+  charge_window_discharged_mwh?: number;
+  charge_window_expired_mwh?: number;
+  charge_window_outstanding_mwh?: number;
 }
 
 export interface RawForecastRow {
@@ -59,6 +63,18 @@ export interface SummaryData {
   compliance_wasted_mwh?: number;
   potential_discharge_mwh?: number;
   shortfall_energy_mwh?: number;
+  // 24h charge-window KPIs
+  charge_window_charged_mwh?: number;
+  charge_window_discharged_mwh?: number;
+  charge_window_expired_mwh?: number;
+  charge_window_outstanding_mwh?: number;
+}
+
+export interface ChargeLot {
+  charged_at: number;
+  expires_at: number;
+  remaining_mwh: number;
+  original_mwh: number;
 }
 
 export interface CarryForwardInfo {
@@ -69,6 +85,12 @@ export interface CarryForwardInfo {
   total_carry_discharged_mwh: number;
   total_carry_expired_mwh: number;
   today_charge_schedule: number[];
+  charge_lots?: Array<{
+    charged_at: number;
+    expires_at: number;
+    remaining_mwh: number;
+    original_mwh: number;
+  }>;
 }
 
 export interface ScheduleResponse {

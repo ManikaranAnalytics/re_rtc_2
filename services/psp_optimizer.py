@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 
+from services.charge_window import process_charge_window_block, seed_lots_from_initial_soc
+
 
 def optimize_psp_dispatch(
     forecast_df: pd.DataFrame,
@@ -14,6 +16,8 @@ def optimize_psp_dispatch(
     min_compliance_ratio: float = 0.50,  # 50% of RTC is the regulatory floor
     min_dispatch_mw: float = 6.0,        # Minimum PSP charge/discharge (MW) — CERC compliance
     prev_day_charge_schedule: list = None,  # kept for API compatibility; no longer used
+    prev_charge_lots: list | None = None,   # FIFO charge lots carried from previous day(s)
+    global_block_offset: int = 0,         # day_index * 96 for multi-day timelines
     psp_discharge_segments: list = None,    # [{startBlock, endBlock, maxDischargeMw}, ...]
 ) -> dict:
     """
@@ -71,6 +75,12 @@ def optimize_psp_dispatch(
     total_carry_discharged_mwh = 0.0
     total_carry_expired_mwh = 0.0
     today_charge_schedule = []   # track today's charges for handoff to next day
+
+    # ── 24h charge-window tracking (FIFO lots, 96-block expiry) ─────────────
+    charge_lots = seed_lots_from_initial_soc(initial_soc, global_block_offset, prev_charge_lots)
+    total_window_charged_mwh = 0.0
+    total_window_discharged_mwh = 0.0
+    total_window_expired_mwh = 0.0
 
     # Power wastage accumulators
     compliance_wasted_mwh = 0.0    # energy lost due to CERC 6MW min-dispatch rule
@@ -172,6 +182,16 @@ def optimize_psp_dispatch(
 
         today_charge_schedule.append(round(psp_charge, 4))
 
+        global_block = global_block_offset + (block - 1)
+        charge_lots, window_metrics = process_charge_window_block(
+            charge_lots,
+            global_block,
+            psp_charge,
+            psp_discharge,
+        )
+        total_window_charged_mwh += window_metrics["charge_window_charged_mwh"]
+        total_window_discharged_mwh += window_metrics["charge_window_discharged_mwh"]
+        total_window_expired_mwh += window_metrics["charge_window_expired_mwh"]
 
         # ── FINAL CALCULATIONS ────────────────────────────────────────────────
         soc_after = soc
@@ -196,6 +216,10 @@ def optimize_psp_dispatch(
             "curtail_flag":       curtail_flag,
             "carry_budget_mwh":   round(carry_budget_now, 4),
             "carry_discharge_mw": round(carry_discharge_this_block, 4),
+            "charge_window_charged_mwh": window_metrics["charge_window_charged_mwh"],
+            "charge_window_discharged_mwh": window_metrics["charge_window_discharged_mwh"],
+            "charge_window_expired_mwh": window_metrics["charge_window_expired_mwh"],
+            "charge_window_outstanding_mwh": window_metrics["charge_window_outstanding_mwh"],
         })
 
     # ── DAILY SUMMARY ─────────────────────────────────────────────────────────
@@ -236,6 +260,13 @@ def optimize_psp_dispatch(
         "compliance_wasted_mwh":        round(compliance_wasted_mwh, 2),
         "potential_discharge_mwh":      round(potential_discharge_mwh, 2),
         "shortfall_energy_mwh":         round(shortfall_energy_mwh, 2),
+        # 24h charge-window KPIs
+        "charge_window_charged_mwh":    round(total_window_charged_mwh, 2),
+        "charge_window_discharged_mwh": round(total_window_discharged_mwh, 2),
+        "charge_window_expired_mwh":    round(total_window_expired_mwh, 2),
+        "charge_window_outstanding_mwh": round(
+            sum(lot["remaining_mwh"] for lot in charge_lots), 2
+        ),
     }
 
     carry_forward = {
@@ -243,6 +274,7 @@ def optimize_psp_dispatch(
         "total_carry_available_mwh":  round(total_carry_available, 2),
         "total_carry_discharged_mwh": round(total_carry_discharged_mwh, 2),
         "today_charge_schedule":      today_charge_schedule,  # for passing to next day
+        "charge_lots":                charge_lots,
     }
 
     return {

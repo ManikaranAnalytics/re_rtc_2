@@ -89,6 +89,12 @@ class ScheduleRequest(BaseModel):
     prev_day_charge_schedule: Optional[List[float]] = Field(
         None, description="96-element array of PSP charge MW per block from previous day (kept for API compatibility)"
     )
+    prev_charge_lots: Optional[List[Dict[str, Any]]] = Field(
+        None, description="FIFO charge lots carried from previous day(s) for 24h window tracking"
+    )
+    global_block_offset: int = Field(
+        0, ge=0, description="Global block index offset (day_index * 96) for multi-day charge-window tracking"
+    )
     # Optional per-block data overrides (for the editable data tab)
     block_overrides: Optional[List[Dict[str, Any]]] = Field(
         None, description="Optional list of per-block overrides: {block, wind_mw, solar_mw}"
@@ -113,6 +119,11 @@ class BlockSchedule(BaseModel):
     # Carry-forward fields
     carry_budget_mwh: float        # Carry-forward energy NOT yet expired at this block (MWh)
     carry_discharge_mw: float      # Portion of PSP discharge sourced from carry-forward SoC (MW)
+    # 24h charge-window tracking
+    charge_window_charged_mwh: float = 0.0
+    charge_window_discharged_mwh: float = 0.0
+    charge_window_expired_mwh: float = 0.0
+    charge_window_outstanding_mwh: float = 0.0
 
 
 class ScheduleSummary(BaseModel):
@@ -135,6 +146,11 @@ class ScheduleSummary(BaseModel):
     initial_soc_mwh: float            # SoC carried in from previous day
     carry_forward_available_mwh: float   # SoC (= initial_soc) carried in from previous day
     carry_forward_discharged_mwh: float  # How much carry energy was actually discharged
+    # 24h charge-window summary
+    charge_window_charged_mwh: float = 0.0
+    charge_window_discharged_mwh: float = 0.0
+    charge_window_expired_mwh: float = 0.0
+    charge_window_outstanding_mwh: float = 0.0
 
 
 class CarryForwardInfo(BaseModel):
@@ -142,6 +158,7 @@ class CarryForwardInfo(BaseModel):
     total_carry_available_mwh: float      # = initial_soc (EOD SoC from previous day)
     total_carry_discharged_mwh: float     # Carry energy actually discharged today
     today_charge_schedule: List[float]    # 96-element: MW charged per block today (pass as prev_day for next day)
+    charge_lots: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class ScheduleResponse(BaseModel):

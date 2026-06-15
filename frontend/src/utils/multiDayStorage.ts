@@ -10,7 +10,7 @@ export interface PersistedDayResult {
 export interface PersistedMultiDayState {
   startDate: string;
   numDays: number;
-  chartView: 'soc' | 'dispatch' | 'compliance';
+  chartView: 'soc' | 'chargeWindow' | 'dispatch' | 'compliance';
   results: PersistedDayResult[];
   optimalRtcMw: number | null;
   optimalSearchError: string;

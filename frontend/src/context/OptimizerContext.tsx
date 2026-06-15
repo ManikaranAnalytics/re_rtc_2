@@ -96,6 +96,9 @@ interface OptimizerContextValue {
   setGenTableEdits: React.Dispatch<React.SetStateAction<Record<number, GenEdit>>>;
   genTableExpanded: boolean;
   setGenTableExpanded: React.Dispatch<React.SetStateAction<boolean>>;
+  // Multi-day uploaded edits (date → block → edit)
+  multiDayGenEdits: Record<string, Record<number, GenEdit>>;
+  setMultiDayGenEdits: React.Dispatch<React.SetStateAction<Record<string, Record<number, GenEdit>>>>;
 
   // Derived
   blocks: BlockData[];
@@ -178,7 +181,8 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   // ── Auto-derive from maxSocMwh when not manually overridden ──
   const derivedCharge     = Math.round((maxSocMwh / 6) * 2) / 2;   // nearest 0.5 MW
   const derivedDischarge  = Math.round((maxSocMwh / 6) * 2) / 2;
-  const derivedMinDispatch = Math.round((maxSocMwh / 36) * 2) / 2;
+  const effectiveMaxDrawal = dischargeOverridden ? maxDischargeMw : derivedDischarge;
+  const derivedMinDispatch = Math.round((effectiveMaxDrawal / 10) * 2) / 2;
 
   useEffect(() => {
     if (!chargeOverridden) setMaxChargeMw(derivedCharge);
@@ -250,6 +254,10 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
   // Generation table edits
   const [genTableEdits, setGenTableEdits] = useState<Record<number, GenEdit>>({});
   const [genTableExpanded, setGenTableExpanded] = useState(true);
+  // Multi-day uploaded edits keyed by ISO date string
+  const [multiDayGenEdits, setMultiDayGenEdits] = useState<Record<string, Record<number, GenEdit>>>({});
+  const multiDayGenEditsRef = useRef<Record<string, Record<number, GenEdit>>>({});
+  useEffect(() => { multiDayGenEditsRef.current = multiDayGenEdits; }, [multiDayGenEdits]);
 
   // ── Build block_overrides list for API ──
   const buildOverridesList = useCallback(() => {
@@ -427,7 +435,9 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
             return { ...row, curtail_flag: seg !== undefined && seg.maxMw === 0 };
           });
           setRawForecast(withCurtail);
-          setGenTableEdits({});
+          // Restore any previously uploaded edits for this date
+          const savedEdits = multiDayGenEditsRef.current[selectedDate];
+          setGenTableEdits(savedEdits ? { ...savedEdits } : {});
         }
       } catch (e) {
         console.warn('Raw forecast fetch failed:', e);
@@ -472,6 +482,7 @@ export function OptimizerProvider({ children }: { children: React.ReactNode }) {
     rawForecast,
     genTableEdits, setGenTableEdits,
     genTableExpanded, setGenTableExpanded,
+    multiDayGenEdits, setMultiDayGenEdits,
     blocks, summary,
     handleRollToNextDay, handleClearCarry,
   };

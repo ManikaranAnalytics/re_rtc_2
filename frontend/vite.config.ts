@@ -21,9 +21,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 600,
     rollupOptions: {
       output: {
-        manualChunks: {
-          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'chart-vendor': ['chart.js', 'react-chartjs-2'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('react-router-dom') || id.includes('react-dom') || id.includes('/react/')) {
+            return 'react-vendor'
+          }
+          if (id.includes('chart.js') || id.includes('react-chartjs-2')) {
+            return 'chart-vendor'
+          }
         },
       },
     },

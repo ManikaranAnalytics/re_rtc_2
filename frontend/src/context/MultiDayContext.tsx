@@ -14,6 +14,8 @@ export interface DayResult {
   schedule: ScheduleResponse;
 }
 
+export type MultiDayChartView = 'soc' | 'chargeWindow' | 'dispatch' | 'compliance';
+
 interface MultiDayContextValue {
   startDate: string;
   setStartDate: React.Dispatch<React.SetStateAction<string>>;
@@ -25,21 +27,28 @@ interface MultiDayContextValue {
   setOptimalRtcMw: React.Dispatch<React.SetStateAction<number | null>>;
   optimalSearchError: string;
   setOptimalSearchError: React.Dispatch<React.SetStateAction<string>>;
-  chartView: 'soc' | 'dispatch' | 'compliance';
-  setChartView: React.Dispatch<React.SetStateAction<'soc' | 'dispatch' | 'compliance'>>;
+  chartView: MultiDayChartView;
+  setChartView: React.Dispatch<React.SetStateAction<MultiDayChartView>>;
 }
 
 const MultiDayContext = createContext<MultiDayContextValue | null>(null);
 
+const VALID_CHART_VIEWS = new Set<MultiDayChartView>(['soc', 'chargeWindow', 'dispatch', 'compliance']);
+
 function readInitial() {
   const saved = loadMultiDayState();
+  const savedView = saved?.chartView;
+  const chartView: MultiDayChartView =
+    savedView && VALID_CHART_VIEWS.has(savedView as MultiDayChartView)
+      ? (savedView as MultiDayChartView)
+      : 'soc';
   return {
     startDate:          saved?.startDate          ?? '2026-06-01',
     numDays:            saved?.numDays            ?? 7,
     results:            (saved?.results ?? []) as DayResult[],
     optimalRtcMw:       saved?.optimalRtcMw       ?? null,
     optimalSearchError: saved?.optimalSearchError ?? '',
-    chartView:          saved?.chartView          ?? ('soc' as const),
+    chartView,
   };
 }
 
@@ -50,7 +59,7 @@ export function MultiDayProvider({ children }: { children: React.ReactNode }) {
   const [results, setResults] = useState<DayResult[]>(initial.results);
   const [optimalRtcMw, setOptimalRtcMw] = useState<number | null>(initial.optimalRtcMw);
   const [optimalSearchError, setOptimalSearchError] = useState(initial.optimalSearchError);
-  const [chartView, setChartView] = useState<'soc' | 'dispatch' | 'compliance'>(initial.chartView);
+  const [chartView, setChartView] = useState<MultiDayChartView>(initial.chartView);
 
   const skipPersistRef = useRef(true);
   const persist = useCallback(() => {

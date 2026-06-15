@@ -89,9 +89,21 @@ def generate_forecast(
         day_data = june_df[june_dates.dt.day == requested_day].copy()
 
     if len(day_data) == 0:
-        raise ValueError(
-            f"No June historical data for day {requested_day} (looked for {historical_date_str})"
-        )
+        # No historical reference — build a flat zero-baseline so any date works.
+        # Uploaded block_overrides will replace these zeros with real forecast values.
+        time_labels = [
+            f"{h:02d}:{m:02d}:00"
+            for h in range(24)
+            for m in (0, 15, 30, 45)
+        ]
+        day_data = pd.DataFrame({
+            "block":          list(range(1, 97)),
+            "time":           time_labels,
+            "wind_speed_2024": [0.0] * 96,
+            "wind_speed_2025": [0.0] * 96,
+            "solar_2024":      [0.0] * 96,
+            "solar_2025":      [0.0] * 96,
+        })
 
     results = []
     for _, row in day_data.iterrows():

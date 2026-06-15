@@ -20,11 +20,6 @@ function blockToTime(block: number): string {
   return `${hh}:${mm}`;
 }
 
-function segmentColor(maxMw: number): string {
-  if (maxMw === 0) return '#dc2626';   // full curtail — dark red
-  return '#d97706';                     // partial curtail — amber
-}
-
 function detectOverlaps(segments: CurtailmentSegment[]): Set<number> {
   const overlapping = new Set<number>();
   for (let i = 0; i < segments.length; i++) {
@@ -801,7 +796,7 @@ export default function ConfigPage() {
                 <span className="config-value" style={{ color: '#fbbf24' }}>{minDispatchMw.toFixed(1)} MW</span>
                 <button
                   onClick={() => { setMinDispatchOverridden(false); setMinDispatchMw(autoMinDispatchMw); }}
-                  title={minDispatchOverridden ? `Reset to auto (${autoMinDispatchMw} MW = PSP ÷ 36)` : `Auto-derived from PSP: ${autoMinDispatchMw} MW`}
+                  title={minDispatchOverridden ? `Reset to auto (${autoMinDispatchMw} MW = Max Drawal ÷ 10)` : `Auto-derived from Max Drawal: ${autoMinDispatchMw} MW`}
                   style={{
                     fontSize: '10px', padding: '2px 7px', borderRadius: '10px', cursor: minDispatchOverridden ? 'pointer' : 'default',
                     background: minDispatchOverridden ? 'rgba(251,191,36,0.15)' : 'rgba(251,191,36,0.10)',
@@ -819,7 +814,7 @@ export default function ConfigPage() {
               style={{ '--color-wind': '#fbbf24' } as React.CSSProperties} />
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
               <span>0 MW (off)</span>
-              <span>Min charge/discharge when PSP runs &nbsp;·&nbsp; <span style={{ color: '#94a3b8' }}>formula: Max Drawal ÷ 6 = {autoMinDispatchMw} MW</span></span>
+              <span>Min charge/discharge when PSP runs &nbsp;·&nbsp; <span style={{ color: '#94a3b8' }}>formula: Max Drawal ÷ 10 = {autoMinDispatchMw} MW</span></span>
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 import { Chart } from 'react-chartjs-2';
 import '../../utils/chartSetup';
 import { useOptimizer } from '../../context/OptimizerContext';
+import { ppaNetScheduleMw } from '../../utils/netSchedule';
 
 export default function DispatchChart() {
   const { blocks, rtcCommitment, loading } = useOptimizer();
@@ -76,7 +77,7 @@ export default function DispatchChart() {
       {
         type: 'line' as const,
         label: 'Net Schedule (MW)',
-        data: blocks.map(b => b.net_schedule),
+        data: blocks.map(b => ppaNetScheduleMw(b.net_schedule, rtcCommitment)),
         borderColor: '#ffffff',
         borderWidth: 2.5,
         pointRadius: 0,
